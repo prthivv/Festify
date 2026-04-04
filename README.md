@@ -1,12 +1,12 @@
 # CEFMS / Festify
 
-College Event & Fest Management System (CEFMS) is a full-stack, database-driven web application for managing college festivals end-to-end. This scaffold uses Node.js, Express, PostgreSQL, session-based authentication, and server-side role checks.
+College Event & Fest Management System (CEFMS) is a full-stack, database-driven web application for managing college festivals end-to-end. This scaffold uses an Express.js backend, PostgreSQL, a React frontend built with plain HTML/CSS/JS delivery, session-based authentication, and server-side role checks.
 
 ## Stack
 
 - Backend: Node.js + Express
 - Database: PostgreSQL 13+
-- Frontend: EJS views, Bootstrap, vanilla JavaScript
+- Frontend: HTML, CSS, React
 - Auth: `express-session` + Argon2 password verification
 - DB driver: `pg`
 
@@ -37,16 +37,15 @@ Festify/
 │   ├── budget.js
 │   ├── schedule.js
 │   └── results.js
-├── public/
-│   ├── app.js
+├── frontend/
+│   ├── index.html
+│   ├── app.jsx
 │   └── styles.css
 ├── scripts/
 │   └── rehash-seed-users.js
 ├── utils/
 │   ├── asyncHandler.js
 │   └── eventAccess.js
-└── views/
-    └── index.ejs
 ```
 
 ## Environment
@@ -138,3 +137,4 @@ node scripts/rehash-seed-users.js
 - All database access uses parameterized PostgreSQL queries.
 - Coordinators are treated as managers of events they created, since the schema does not include a separate event-assignment table.
 - `Schedule.schedule_id` follows the provided schema and is managed manually in route code.
+- The frontend is served statically from `frontend/`, while Express is used only for API endpoints and session handling.

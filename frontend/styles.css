@@ -144,6 +144,7 @@ body {
   color: var(--accent);
   font-weight: 600;
   font-size: 0.84rem;
+  text-transform: capitalize;
 }
 
 .table {
@@ -162,17 +163,9 @@ body {
   vertical-align: middle;
 }
 
-.table tbody td {
-  background: transparent;
-}
-
 .muted-note {
   color: var(--muted);
   font-size: 0.92rem;
-}
-
-.hidden {
-  display: none !important;
 }
 
 .fade-up {

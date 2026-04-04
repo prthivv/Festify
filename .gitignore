@@ -5,6 +5,7 @@ node_modules/
 .env
 .env.local
 .env.*.local
+*.local
 
 # Logs
 logs/
@@ -19,6 +20,8 @@ dist/
 build/
 coverage/
 .cache/
+.parcel-cache/
+.vite/
 
 # OS and editor files
 .DS_Store
@@ -32,3 +35,8 @@ Thumbs.db
 # Optional local PostgreSQL dumps
 *.sql.gz
 *.dump
+
+# Runtime and temporary files
+tmp/
+temp/
+*.pid
