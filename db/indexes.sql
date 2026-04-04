@@ -1,0 +1,10 @@
+CREATE INDEX IF NOT EXISTS idx_user_email ON "User"(email);
+CREATE INDEX IF NOT EXISTS idx_team_event ON Team(event_id);
+CREATE INDEX IF NOT EXISTS idx_volunteer_event ON VolunteerAssignment(event_id);
+CREATE INDEX IF NOT EXISTS idx_budget_event ON Budget(event_id);
+CREATE INDEX IF NOT EXISTS idx_expense_budget ON Expense(budget_id);
+CREATE INDEX IF NOT EXISTS idx_schedule_event ON Schedule(event_id);
+CREATE INDEX IF NOT EXISTS idx_result_event ON Result(event_id);
+CREATE INDEX IF NOT EXISTS idx_teammember_user ON TeamMember(user_id);
+CREATE INDEX IF NOT EXISTS idx_eventsponsor_sponsor ON EventSponsor(sponsor_id);
+CREATE INDEX IF NOT EXISTS idx_registration_event ON ParticipantRegistration(event_id);
