@@ -1,6 +1,6 @@
 # CEFMS / Festify
 
-College Event & Fest Management System (CEFMS) is a full-stack, database-driven web application for managing college festivals end-to-end. This scaffold uses an Express.js backend, PostgreSQL, a React frontend built with plain HTML/CSS/JS delivery, JWT-based authentication, and server-side role checks.
+Festify is a College Event & Fest Management System built with Express, PostgreSQL, and a React frontend served statically by the Node app. It supports role-based workflows for admins, coordinators, participants, and volunteers.
 
 ## Stack
 
@@ -10,6 +10,16 @@ College Event & Fest Management System (CEFMS) is a full-stack, database-driven 
 - Auth: JWT + Argon2 password verification
 - DB driver: `pg`
 
+## Features
+
+- JWT login with role-aware backend authorization
+- Event creation, update, and deletion
+- Individual event registration
+- Team creation and joining for team events
+- Schedule management with venue conflict checks
+- Result publishing after scheduled event end
+- Sponsor, volunteer, budget, and expense APIs
+
 ## Project Structure
 
 ```text
@@ -17,13 +27,16 @@ Festify/
 ├── app.js
 ├── db.js
 ├── package.json
-├── .env
 ├── .env.example
 ├── db/
 │   ├── schema.sql
 │   ├── triggers.sql
 │   ├── indexes.sql
 │   └── seed.sql
+├── frontend/
+│   ├── index.html
+│   ├── app.jsx
+│   └── styles.css
 ├── middleware/
 │   ├── auth.js
 │   └── rbac.js
@@ -37,20 +50,30 @@ Festify/
 │   ├── budget.js
 │   ├── schedule.js
 │   └── results.js
-├── frontend/
-│   ├── index.html
-│   ├── app.jsx
-│   └── styles.css
 ├── scripts/
 │   └── rehash-seed-users.js
-├── utils/
-│   ├── asyncHandler.js
-│   └── eventAccess.js
+└── utils/
+    ├── asyncHandler.js
+    └── eventAccess.js
 ```
 
-## Environment
+## Prerequisites
 
-Create a local `.env` file from `.env.example`:
+- Node.js 18+ and npm
+- PostgreSQL installed and running
+- A PostgreSQL superuser account such as `postgres`
+
+## Local Setup
+
+### 1. Install dependencies
+
+```bash
+npm install
+```
+
+### 2. Create the environment file
+
+Copy `.env.example` to `.env` and update the values:
 
 ```env
 DB_HOST=localhost
@@ -58,84 +81,233 @@ DB_PORT=5432
 DB_NAME=cefms_db
 DB_USER=cefms_app
 DB_PASSWORD=your_password
-JWT_SECRET=replace_with_a_64_char_hex_secret
-JWT_EXPIRES_IN=8h
 PORT=5000
+JWT_SECRET=replace_with_a_long_random_secret
+JWT_EXPIRES_IN=8h
 ```
 
-To generate a fresh JWT secret once Node is installed:
+Generate a JWT secret if needed:
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
-## Setup
+### 3. Create the database
 
-1. Install dependencies:
-
-```bash
-npm install
-```
-
-2. Create the database and apply SQL files:
+If the database does not exist yet:
 
 ```bash
-psql -U postgres -c "CREATE DATABASE cefms_db;"
-psql -U postgres -d cefms_db -f db/schema.sql
-psql -U postgres -d cefms_db -f db/triggers.sql
-psql -U postgres -d cefms_db -f db/indexes.sql
-psql -U postgres -d cefms_db -f db/seed.sql
+sudo -u postgres psql -c "CREATE DATABASE cefms_db;"
 ```
 
-3. Start the server:
+### 4. Create the app database user
+
+If you have not created `cefms_app` yet:
+
+```bash
+sudo -u postgres psql
+```
+
+Then run:
+
+```sql
+CREATE USER cefms_app WITH PASSWORD 'your_password';
+GRANT ALL PRIVILEGES ON DATABASE cefms_db TO cefms_app;
+\q
+```
+
+### 5. Apply schema, triggers, indexes, and seed data
+
+Because many Linux PostgreSQL installs use peer auth for `postgres`, these commands are usually the safest:
+
+```bash
+sudo -u postgres psql -d cefms_db -f db/schema.sql
+sudo -u postgres psql -d cefms_db -f db/triggers.sql
+sudo -u postgres psql -d cefms_db -f db/indexes.sql
+sudo -u postgres psql -d cefms_db -f db/seed.sql
+```
+
+### 6. Grant table/sequence permissions to the app user
+
+```bash
+sudo -u postgres psql -d cefms_db
+```
+
+Then run:
+
+```sql
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO cefms_app;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO cefms_app;
+GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public TO cefms_app;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+GRANT ALL PRIVILEGES ON TABLES TO cefms_app;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+GRANT ALL PRIVILEGES ON SEQUENCES TO cefms_app;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+GRANT ALL PRIVILEGES ON FUNCTIONS TO cefms_app;
+\q
+```
+
+### 7. Verify database access as the app user
+
+Use `-h localhost` so PostgreSQL uses password auth instead of peer auth:
+
+```bash
+psql -h localhost -U cefms_app -d cefms_db
+```
+
+Useful checks once inside `psql`:
+
+```sql
+\dt
+SELECT * FROM "User";
+SELECT * FROM Event;
+\q
+```
+
+## Run the App
+
+Start the local server:
 
 ```bash
 npm start
 ```
 
+Then open:
+
+```text
+http://localhost:5000
+```
+
+The Express app serves:
+
+- API routes under `/api/...`
+- the React frontend from `frontend/`
+
 ## Demo Accounts
 
-The seeded accounts use the same demo password:
+All seeded accounts use this password:
 
 ```text
 correct horse battery staple
 ```
 
-Primary logins:
+Useful logins:
 
 - Admin: `admin@cefms.edu`
 - Coordinators: `coord.music@cefms.edu`, `coord.sports@cefms.edu`
 - Participants: `participant1@cefms.edu` through `participant10@cefms.edu`
 - Volunteers: `volunteer1@cefms.edu` through `volunteer3@cefms.edu`
 
-The seed file uses a known Argon2 demo hash so login works immediately. If you want unique hashes generated locally, run:
+If you want to regenerate the stored Argon2 hashes locally:
 
 ```bash
 node scripts/rehash-seed-users.js
 ```
 
-## API Overview
+## What To Test Locally
+
+### Admin or Coordinator
+
+- Sign in
+- Create a new event
+- Select an event and schedule it
+- Publish a result for a completed event
+- Delete an event you are allowed to manage
+
+### Participant
+
+- Register for an individual event
+- Create a team for a team event
+- Join an existing team
+
+### Volunteer
+
+- Sign in and confirm the dashboard remains read-only
+
+## Common PostgreSQL Issues
+
+### Peer authentication failed
+
+If this fails:
+
+```bash
+psql -U cefms_app -d cefms_db
+```
+
+Use this instead:
+
+```bash
+psql -h localhost -U cefms_app -d cefms_db
+```
+
+### Permission denied for table `"User"`
+
+That means the app user exists but does not have table/sequence privileges yet. Run the grant steps from the setup section again as `postgres`.
+
+## API Summary
 
 - `POST /api/login`
 - `POST /api/logout`
 - `GET /api/me`
-- `GET/POST /api/events`
-- `PUT/DELETE /api/events/:id`
+- `GET /api/events`
+- `POST /api/events`
+- `PUT /api/events/:id`
+- `DELETE /api/events/:id`
 - `POST /api/events/:id/register`
+- `GET /api/teams?event_id=<id>`
 - `POST /api/teams`
 - `POST /api/teams/:id/join`
-- `POST /api/volunteers/assign`
 - `GET /api/volunteers/me`
-- `GET/POST /api/sponsors`
+- `POST /api/volunteers/assign`
+- `GET /api/sponsors`
+- `POST /api/sponsors`
 - `POST /api/sponsors/:id/link`
-- `GET/POST /api/budgets/:event_id`
+- `GET /api/budgets/:event_id`
+- `POST /api/budgets/:event_id`
 - `POST /api/expenses`
-- `GET/POST /api/schedule`
-- `GET/POST /api/results`
+- `GET /api/schedule`
+- `POST /api/schedule`
+- `GET /api/results`
+- `POST /api/results`
+
+## GitHub Push Checklist
+
+Before pushing, make sure:
+
+- `.env` is not committed
+- `node_modules/` is not committed
+- local cookie files are not committed
+- database dumps are not committed
+- only source code, SQL files, docs, and lockfiles are staged
+
+Check your git state:
+
+```bash
+git status
+```
+
+Stage and commit:
+
+```bash
+git add .
+git commit -m "Update local setup docs and frontend event workflows"
+```
+
+Push:
+
+```bash
+git branch -M main
+git remote add origin <your-github-repo-url>
+git push -u origin main
+```
 
 ## Notes
 
-- All database access uses parameterized PostgreSQL queries.
-- Coordinators are treated as managers of events they created, since the schema does not include a separate event-assignment table.
-- `Schedule.schedule_id` follows the provided schema and is managed manually in route code.
-- The frontend is served statically from `frontend/`, while Express is used only for API endpoints and JWT-protected route handling.
+- All SQL uses parameterized queries.
+- Coordinators can manage events they created.
+- `Schedule.schedule_id` is managed manually in route code to match the provided schema.
+- The frontend is plain HTML/CSS + React delivered directly by Express.

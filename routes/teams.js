@@ -1,10 +1,54 @@
 const express = require("express");
+const db = require("../db");
 const { pool } = require("../db");
 const { isLoggedIn } = require("../middleware/auth");
 const { requireRole } = require("../middleware/rbac");
 const asyncHandler = require("../utils/asyncHandler");
 
 const router = express.Router();
+
+router.get(
+  "/",
+  asyncHandler(async (req, res) => {
+    const eventId =
+      req.query.event_id === undefined
+        ? null
+        : Number.parseInt(req.query.event_id, 10);
+
+    if (req.query.event_id !== undefined && !Number.isInteger(eventId)) {
+      return res.status(400).json({
+        error: "event_id must be a valid integer."
+      });
+    }
+
+    const result = await db.query(
+      `SELECT
+         t.team_id,
+         t.team_name,
+         t.event_id,
+         t.captain_id,
+         captain.name AS captain_name,
+         e.max_participants,
+         COUNT(tm.user_id)::INT AS member_count
+       FROM Team t
+       JOIN "User" captain ON captain.user_id = t.captain_id
+       JOIN Event e ON e.event_id = t.event_id
+       LEFT JOIN TeamMember tm ON tm.team_id = t.team_id
+       WHERE ($1::INT IS NULL OR t.event_id = $1)
+       GROUP BY
+         t.team_id,
+         t.team_name,
+         t.event_id,
+         t.captain_id,
+         captain.name,
+         e.max_participants
+       ORDER BY t.created_at DESC, t.team_name`,
+      [eventId]
+    );
+
+    res.json(result.rows);
+  })
+);
 
 router.post(
   "/",

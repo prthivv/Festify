@@ -35,6 +35,10 @@ body {
   padding: 2rem 0 3.5rem;
 }
 
+.dashboard-main {
+  min-width: 0;
+}
+
 .login-shell {
   min-height: 100vh;
   display: flex;
@@ -275,6 +279,12 @@ body {
   color: #fff;
 }
 
+.btn-brand:disabled,
+.btn-ghost:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
 .btn-ghost {
   border: 1px solid rgba(31, 36, 48, 0.14);
 }
@@ -308,6 +318,12 @@ body {
   gap: 1rem;
   position: sticky;
   top: 1.25rem;
+}
+
+.action-column {
+  display: grid;
+  gap: 1rem;
+  align-content: start;
 }
 
 .content-grid {
@@ -430,12 +446,40 @@ body {
   border: 1px solid rgba(30, 111, 92, 0.14);
 }
 
+.action-block + .action-block {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.subsection-title {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0 0 0.8rem;
+}
+
+.form-stack {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 0.8fr);
+  gap: 0.85rem;
+}
+
 .link-button {
   border: none;
   padding: 0;
   background: transparent;
   color: var(--primary-dark);
   font-weight: 700;
+}
+
+.link-button:hover,
+.link-button:focus {
+  color: var(--primary);
 }
 
 .table-row-action {
@@ -463,6 +507,66 @@ body {
 
 .fade-up:nth-child(3) {
   animation-delay: 0.16s;
+}
+
+.flash-banner {
+  position: sticky;
+  top: 1rem;
+  z-index: 20;
+  width: min(960px, calc(100vw - 48px));
+  margin: 1rem auto 0;
+  padding: 0.95rem 1.1rem;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  backdrop-filter: blur(12px);
+  box-shadow: var(--shadow);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.flash-banner-success {
+  background: rgba(30, 111, 92, 0.16);
+  border-color: rgba(30, 111, 92, 0.22);
+}
+
+.flash-banner-danger {
+  background: rgba(191, 91, 61, 0.16);
+  border-color: rgba(191, 91, 61, 0.22);
+}
+
+.modal-shell {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  isolation: isolate;
+}
+
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(22, 26, 32, 0.38);
+  backdrop-filter: blur(6px);
+  z-index: 0;
+}
+
+.modal-card {
+  position: relative;
+  z-index: 1;
+  width: min(640px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid var(--border);
+  border-radius: 28px;
+  box-shadow: 0 28px 70px rgba(31, 36, 48, 0.2);
+  padding: 1.6rem;
+  opacity: 1;
+  transform: none;
 }
 
 @keyframes fadeUp {
@@ -505,5 +609,24 @@ body {
 
   .app-container {
     width: min(100vw - 24px, 1480px);
+  }
+
+  .flash-banner {
+    width: min(100vw - 24px, 960px);
+  }
+
+  .modal-shell {
+    padding: 0.8rem;
+  }
+
+  .modal-card {
+    width: min(100vw - 16px, 640px);
+    max-height: calc(100vh - 24px);
+    border-radius: 22px;
+    padding: 1.15rem;
+  }
+
+  .form-row {
+    grid-template-columns: 1fr;
   }
 }

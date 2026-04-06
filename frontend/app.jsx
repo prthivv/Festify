@@ -24,7 +24,7 @@ function setStoredToken(token) {
       localStorage.removeItem(TOKEN_STORAGE_KEY);
     }
   } catch (error) {
-    // Ignore storage errors in restricted environments.
+    // Ignore storage issues in restricted environments.
   }
 }
 
@@ -46,6 +46,16 @@ function formatCompactDate(value) {
     day: "numeric",
     year: "numeric"
   });
+}
+
+function formatDateTimeInput(value) {
+  if (!value) {
+    return "";
+  }
+
+  const date = new Date(value);
+  const localOffsetMs = date.getTimezoneOffset() * 60 * 1000;
+  return new Date(date.getTime() - localOffsetMs).toISOString().slice(0, 16);
 }
 
 function getEventStatus(eventItem) {
@@ -159,7 +169,7 @@ function Topbar({ user, onRefresh }) {
         <h1 className="topbar-title">Festival Control Surface</h1>
       </div>
       <div className="topbar-meta">
-        <span className="muted-note">{user ? `Signed in as ${user.role}` : "Preview mode"}</span>
+        <span className="muted-note">{`Signed in as ${user.role}`}</span>
         <button className="btn btn-ghost" type="button" onClick={onRefresh}>
           Refresh Data
         </button>
@@ -191,6 +201,45 @@ function StackList({ items, emptyMessage }) {
   }
 
   return <div className="stack-list">{items}</div>;
+}
+
+function FlashBanner({ flash, onDismiss }) {
+  if (!flash.message) {
+    return null;
+  }
+
+  return (
+    <section className={`flash-banner flash-banner-${flash.type} fade-up`}>
+      <span>{flash.message}</span>
+      <button className="link-button" type="button" onClick={onDismiss}>
+        Dismiss
+      </button>
+    </section>
+  );
+}
+
+function Modal({ title, note, isOpen, onClose, children }) {
+  if (!isOpen) {
+    return null;
+  }
+
+  return (
+    <div className="modal-shell" role="dialog" aria-modal="true" aria-label={title}>
+      <div className="modal-backdrop" onClick={onClose} />
+      <section className="modal-card fade-up">
+        <SectionHeader
+          title={title}
+          note={note}
+          actions={
+            <button className="btn btn-ghost btn-sm" type="button" onClick={onClose}>
+              Close
+            </button>
+          }
+        />
+        {children}
+      </section>
+    </div>
+  );
 }
 
 function EventHighlights({ events, onSelectEvent }) {
@@ -251,7 +300,7 @@ function SessionPanel({ user, onLogout }) {
     <section className="panel-card">
       <SectionHeader
         title="Session Snapshot"
-        note="This now reads identity from the JWT-backed API."
+        note="Identity and permissions are now coming from the JWT-backed API."
       />
       <div className="session-card">
         <div className="status-pill mb-3">Signed in</div>
@@ -301,7 +350,7 @@ function EventDetailsPanel({ eventItem, onClose }) {
           note="Pick an event from the list to preview the detail experience."
         />
         <p className="muted-note mb-0">
-          This is a read-only detail panel so you can keep building UI safely around the backend.
+          This read-only detail panel is also the anchor point for role-aware actions.
         </p>
       </section>
     );
@@ -361,6 +410,168 @@ function EventDetailsPanel({ eventItem, onClose }) {
   );
 }
 
+function EventActionPanel({
+  user,
+  selectedEvent,
+  teams,
+  resultForm,
+  setResultForm,
+  teamForm,
+  setTeamForm,
+  isSubmitting,
+  onOpenCreateEvent,
+  onOpenSchedule,
+  onDeleteEvent,
+  onPublishResult,
+  onRegister,
+  onCreateTeam,
+  onJoinTeam
+}) {
+  if (!user) {
+    return null;
+  }
+
+  const canManageEvents = user.role === "Admin" || user.role === "Coordinator";
+  const isParticipant = user.role === "Participant";
+
+  return (
+    <section className="panel-card">
+      <SectionHeader
+        title="Actions"
+        note="Role-aware frontend controls wired to the existing API routes."
+      />
+
+      {canManageEvents ? (
+        <div className="action-block">
+          <h3 className="subsection-title">Event Management</h3>
+          <p className="muted-note">Open a focused dialog to create a new event without crowding the side panel.</p>
+          <button className="btn btn-brand" type="button" onClick={onOpenCreateEvent}>
+            Create Event
+          </button>
+        </div>
+      ) : null}
+
+      {canManageEvents && selectedEvent ? (
+        <div className="action-block">
+          <h3 className="subsection-title">Manage Selected Event</h3>
+          <p className="muted-note">
+            Update operational details for
+            {" "}
+            <strong>{selectedEvent.name}</strong>.
+          </p>
+
+          <button className="btn btn-ghost" type="button" onClick={onOpenSchedule}>
+            Schedule Event
+          </button>
+
+          <button
+            className="btn btn-outline-danger mt-3"
+            type="button"
+            disabled={isSubmitting}
+            onClick={onDeleteEvent}
+          >
+            Delete Event
+          </button>
+
+          <form className="form-stack mt-4" onSubmit={onPublishResult}>
+            <textarea
+              className="form-control"
+              rows="3"
+              placeholder="Winner details"
+              value={resultForm.winner_details}
+              onChange={(event) =>
+                setResultForm((currentForm) => ({
+                  ...currentForm,
+                  winner_details: event.target.value
+                }))
+              }
+              required
+            />
+            <button className="btn btn-brand" type="submit" disabled={isSubmitting}>
+              Publish Result
+            </button>
+          </form>
+        </div>
+      ) : null}
+
+      {isParticipant ? (
+        selectedEvent ? (
+          <div className="action-block">
+            <h3 className="subsection-title">Participant Actions</h3>
+            <p className="muted-note">
+              You selected
+              {" "}
+              <strong>{selectedEvent.name}</strong>.
+            </p>
+
+            {selectedEvent.type === "individual" ? (
+              <button className="btn btn-brand" type="button" disabled={isSubmitting} onClick={onRegister}>
+                Register for Event
+              </button>
+            ) : (
+              <>
+                <form className="form-stack" onSubmit={onCreateTeam}>
+                  <input
+                    className="form-control"
+                    type="text"
+                    placeholder="New team name"
+                    value={teamForm.team_name}
+                    onChange={(event) =>
+                      setTeamForm((currentForm) => ({
+                        ...currentForm,
+                        team_name: event.target.value
+                      }))
+                    }
+                    required
+                  />
+                  <button className="btn btn-brand" type="submit" disabled={isSubmitting}>
+                    Create Team
+                  </button>
+                </form>
+
+                <div className="mt-4">
+                  <h4 className="subsection-title">Existing Teams</h4>
+                  {teams.length > 0 ? (
+                    <div className="stack-list">
+                      {teams.map((team) => (
+                        <article className="stack-item" key={team.team_id}>
+                          <div className="stack-topline">
+                            <strong>{team.team_name}</strong>
+                            <span className="status-pill">
+                              {team.member_count}/{team.max_participants}
+                            </span>
+                          </div>
+                          <p className="muted-note mb-3">Captain: {team.captain_name}</p>
+                          <button
+                            className="btn btn-ghost"
+                            type="button"
+                            disabled={isSubmitting}
+                            onClick={() => onJoinTeam(team.team_id)}
+                          >
+                            Join Team
+                          </button>
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="muted-note mb-0">No teams have been created for this event yet.</p>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        ) : (
+          <p className="muted-note mb-0">Select an event to register or manage team participation.</p>
+        )
+      ) : null}
+
+      {user.role === "Volunteer" ? (
+        <p className="muted-note mb-0">Volunteers have read-only access in this dashboard.</p>
+      ) : null}
+    </section>
+  );
+}
+
 function OverviewView({ events, schedule, results, onSelectEvent }) {
   return (
     <div className="content-grid">
@@ -369,10 +580,10 @@ function OverviewView({ events, schedule, results, onSelectEvent }) {
           <span className="eyebrow">React Frontend Shell</span>
           <div className="row align-items-end g-4 mt-1">
             <div className="col-lg-7">
-              <h1 className="display-title">Read-only festival operations board.</h1>
+              <h1 className="display-title">Festival operations with real actions now wired in.</h1>
               <p className="hero-copy">
-                The frontend is now wired to a JWT-based backend flow while keeping the dashboard
-                focused on read-only visibility and safe UI iteration.
+                The dashboard now supports core workflows: admins and coordinators can create events,
+                while participants can register and manage teams directly from the Events area.
               </p>
             </div>
             <div className="col-lg-5">
@@ -406,12 +617,31 @@ function OverviewView({ events, schedule, results, onSelectEvent }) {
   );
 }
 
-function EventsView({ events, selectedEvent, onSelectEvent, onClearSelection }) {
+function EventsView({
+  user,
+  events,
+  selectedEvent,
+  teams,
+  resultForm,
+  setResultForm,
+  teamForm,
+  setTeamForm,
+  isSubmitting,
+  onSelectEvent,
+  onClearSelection,
+  onOpenCreateEvent,
+  onOpenSchedule,
+  onDeleteEvent,
+  onPublishResult,
+  onRegister,
+  onCreateTeam,
+  onJoinTeam
+}) {
   return (
     <div className="events-layout">
       <div className="content-main">
         <section className="table-card fade-up">
-          <SectionHeader title="Events Directory" note="Shared read-only view for every role." />
+          <SectionHeader title="Events Directory" note="Select an event to view details and available actions." />
           <DataTable
             headers={["Event", "Coordinator", "Capacity", "Registrations", "Venue", "Status"]}
             emptyMessage="No events available yet."
@@ -445,8 +675,25 @@ function EventsView({ events, selectedEvent, onSelectEvent, onClearSelection }) 
         </section>
       </div>
 
-      <div className="content-side fade-up">
+      <div className="content-side fade-up action-column">
         <EventDetailsPanel eventItem={selectedEvent} onClose={onClearSelection} />
+        <EventActionPanel
+          user={user}
+          selectedEvent={selectedEvent}
+          teams={teams}
+          resultForm={resultForm}
+          setResultForm={setResultForm}
+          teamForm={teamForm}
+          setTeamForm={setTeamForm}
+          isSubmitting={isSubmitting}
+          onOpenCreateEvent={onOpenCreateEvent}
+          onOpenSchedule={onOpenSchedule}
+          onDeleteEvent={onDeleteEvent}
+          onPublishResult={onPublishResult}
+          onRegister={onRegister}
+          onCreateTeam={onCreateTeam}
+          onJoinTeam={onJoinTeam}
+        />
       </div>
     </div>
   );
@@ -508,17 +755,17 @@ function LoginPage({ form, setForm, handleLogin, message, messageType, isLoading
             <span className="eyebrow">Festify / CEFMS</span>
             <h1 className="display-title login-title">Festival management, with a cleaner entry point.</h1>
             <p className="hero-copy">
-              The login screen lives on its own page so the main dashboard can focus on festival
-              operations and data views.
+              Sign in to unlock role-aware actions for event creation, participant registration, and
+              team workflows.
             </p>
             <div className="login-points">
               <div className="login-point">
                 <strong>JWT-enabled backend</strong>
-                <span className="muted-note">The frontend now stores and sends the bearer token.</span>
+                <span className="muted-note">The frontend stores and sends the bearer token.</span>
               </div>
               <div className="login-point">
-                <strong>Dashboard stays modular</strong>
-                <span className="muted-note">The overview, events, schedule, and results views are kept separate.</span>
+                <strong>Action-ready dashboard</strong>
+                <span className="muted-note">Core event flows are wired directly to the API now.</span>
               </div>
             </div>
           </section>
@@ -588,14 +835,37 @@ function DashboardPage({
   events,
   schedule,
   results,
+  teams,
   activeView,
   setActiveView,
+  showCreateEventModal,
+  showScheduleModal,
+  selectedEvent,
+  eventForm,
+  setEventForm,
+  scheduleForm,
+  setScheduleForm,
+  resultForm,
+  setResultForm,
+  teamForm,
+  setTeamForm,
+  isLoading,
+  isSubmitting,
   onRefresh,
   onLogout,
-  selectedEvent,
   onSelectEvent,
   onClearSelection,
-  isLoading
+  onCreateEvent,
+  onCloseCreateEvent,
+  onOpenCreateEvent,
+  onSaveSchedule,
+  onCloseSchedule,
+  onOpenSchedule,
+  onDeleteEvent,
+  onPublishResult,
+  onRegister,
+  onCreateTeam,
+  onJoinTeam
 }) {
   let activeContent;
 
@@ -608,10 +878,24 @@ function DashboardPage({
   } else if (activeView === "events") {
     activeContent = (
       <EventsView
+        user={user}
         events={events}
         selectedEvent={selectedEvent}
+        teams={teams}
+        resultForm={resultForm}
+        setResultForm={setResultForm}
+        teamForm={teamForm}
+        setTeamForm={setTeamForm}
+        isSubmitting={isSubmitting}
         onSelectEvent={onSelectEvent}
         onClearSelection={onClearSelection}
+        onOpenCreateEvent={onOpenCreateEvent}
+        onOpenSchedule={onOpenSchedule}
+        onDeleteEvent={onDeleteEvent}
+        onPublishResult={onPublishResult}
+        onRegister={onRegister}
+        onCreateTeam={onCreateTeam}
+        onJoinTeam={onJoinTeam}
       />
     );
   } else if (activeView === "schedule") {
@@ -640,6 +924,125 @@ function DashboardPage({
           </aside>
           <section className="dashboard-main">{activeContent}</section>
         </div>
+
+        <Modal
+          title="Create Event"
+          note="Set up a new event without compressing the side rail."
+          isOpen={showCreateEventModal}
+          onClose={onCloseCreateEvent}
+        >
+          <form className="form-stack" onSubmit={onCreateEvent}>
+            <input
+              className="form-control"
+              type="text"
+              placeholder="Event name"
+              value={eventForm.name}
+              onChange={(event) =>
+                setEventForm((currentForm) => ({
+                  ...currentForm,
+                  name: event.target.value
+                }))
+              }
+              required
+            />
+            <textarea
+              className="form-control"
+              rows="3"
+              placeholder="Short description"
+              value={eventForm.description}
+              onChange={(event) =>
+                setEventForm((currentForm) => ({
+                  ...currentForm,
+                  description: event.target.value
+                }))
+              }
+            />
+            <div className="form-row">
+              <select
+                className="form-select"
+                value={eventForm.type}
+                onChange={(event) =>
+                  setEventForm((currentForm) => ({
+                    ...currentForm,
+                    type: event.target.value
+                  }))
+                }
+              >
+                <option value="individual">Individual</option>
+                <option value="team">Team</option>
+              </select>
+              <input
+                className="form-control"
+                type="number"
+                min="1"
+                placeholder="Capacity"
+                value={eventForm.max_participants}
+                onChange={(event) =>
+                  setEventForm((currentForm) => ({
+                    ...currentForm,
+                    max_participants: event.target.value
+                  }))
+                }
+                required
+              />
+            </div>
+            <button className="btn btn-brand" type="submit" disabled={isSubmitting}>
+              Create Event
+            </button>
+          </form>
+        </Modal>
+
+        <Modal
+          title={selectedEvent ? `Schedule ${selectedEvent.name}` : "Schedule Event"}
+          note="Venue and time details for the currently selected event."
+          isOpen={showScheduleModal}
+          onClose={onCloseSchedule}
+        >
+          <form className="form-stack" onSubmit={onSaveSchedule}>
+            <input
+              className="form-control"
+              type="text"
+              placeholder="Venue"
+              value={scheduleForm.venue}
+              onChange={(event) =>
+                setScheduleForm((currentForm) => ({
+                  ...currentForm,
+                  venue: event.target.value
+                }))
+              }
+              required
+            />
+            <div className="form-row">
+              <input
+                className="form-control"
+                type="datetime-local"
+                value={scheduleForm.start_time}
+                onChange={(event) =>
+                  setScheduleForm((currentForm) => ({
+                    ...currentForm,
+                    start_time: event.target.value
+                  }))
+                }
+                required
+              />
+              <input
+                className="form-control"
+                type="datetime-local"
+                value={scheduleForm.end_time}
+                onChange={(event) =>
+                  setScheduleForm((currentForm) => ({
+                    ...currentForm,
+                    end_time: event.target.value
+                  }))
+                }
+                required
+              />
+            </div>
+            <button className="btn btn-brand" type="submit" disabled={isSubmitting}>
+              Save Schedule
+            </button>
+          </form>
+        </Modal>
       </div>
     </main>
   );
@@ -650,15 +1053,67 @@ function App() {
   const [events, setEvents] = useState([]);
   const [schedule, setSchedule] = useState([]);
   const [results, setResults] = useState([]);
+  const [teams, setTeams] = useState([]);
   const [activeView, setActiveView] = useState("overview");
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [form, setForm] = useState({
     email: "",
     password: ""
   });
-  const [message, setMessage] = useState("");
-  const [messageType, setMessageType] = useState("");
+  const [eventForm, setEventForm] = useState({
+    name: "",
+    description: "",
+    type: "individual",
+    max_participants: ""
+  });
+  const [scheduleForm, setScheduleForm] = useState({
+    venue: "",
+    start_time: "",
+    end_time: ""
+  });
+  const [resultForm, setResultForm] = useState({
+    winner_details: ""
+  });
+  const [teamForm, setTeamForm] = useState({
+    team_name: ""
+  });
+  const [showCreateEventModal, setShowCreateEventModal] = useState(false);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [flash, setFlash] = useState({
+    message: "",
+    type: "success"
+  });
   const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  function showFlash(message, type = "success") {
+    setFlash({ message, type });
+  }
+
+  function clearFlash() {
+    setFlash({ message: "", type: "success" });
+  }
+
+  function syncEventForms(eventItem) {
+    setScheduleForm({
+      venue: eventItem?.venue || "",
+      start_time: formatDateTimeInput(eventItem?.start_time),
+      end_time: formatDateTimeInput(eventItem?.end_time)
+    });
+    setResultForm({
+      winner_details: eventItem?.winner_details || ""
+    });
+  }
+
+  async function loadTeamsForEvent(eventItem) {
+    if (!eventItem || eventItem.type !== "team") {
+      setTeams([]);
+      return;
+    }
+
+    const teamsPayload = await apiFetch(`/api/teams?event_id=${eventItem.event_id}`);
+    setTeams(teamsPayload);
+  }
 
   async function loadDashboard() {
     setIsLoading(true);
@@ -677,6 +1132,14 @@ function App() {
       setEvents(eventsPayload);
       setSchedule(schedulePayload);
       setResults(resultsPayload);
+
+      if (selectedEvent) {
+        const refreshedSelection =
+          eventsPayload.find((eventItem) => eventItem.event_id === selectedEvent.event_id) || null;
+        setSelectedEvent(refreshedSelection);
+        syncEventForms(refreshedSelection);
+        await loadTeamsForEvent(refreshedSelection);
+      }
     } catch (error) {
       if (error.message === "Invalid or expired token.") {
         setStoredToken(null);
@@ -691,13 +1154,13 @@ function App() {
 
   useEffect(() => {
     loadDashboard().catch((error) => {
-      setMessage(error.message);
-      setMessageType("danger");
+      showFlash(error.message, "danger");
     });
   }, []);
 
   async function handleLogin(event) {
     event.preventDefault();
+    setIsSubmitting(true);
 
     try {
       const payload = await apiFetch("/api/login", {
@@ -707,16 +1170,16 @@ function App() {
 
       setStoredToken(payload.token);
       setUser(payload.user);
-      setMessage("");
-      setMessageType("");
       setForm({
         email: "",
         password: ""
       });
+      clearFlash();
       await loadDashboard();
     } catch (error) {
-      setMessage(error.message);
-      setMessageType("danger");
+      showFlash(error.message, "danger");
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
@@ -733,19 +1196,217 @@ function App() {
       setStoredToken(null);
       setUser(null);
       setSelectedEvent(null);
+      setTeams([]);
       setActiveView("overview");
-      setMessage("");
-      setMessageType("");
+      clearFlash();
     }
   }
 
-  function handleSelectEvent(eventItem) {
+  async function handleSelectEvent(eventItem) {
     setSelectedEvent(eventItem);
+    syncEventForms(eventItem);
     setActiveView("events");
+
+    try {
+      await loadTeamsForEvent(eventItem);
+    } catch (error) {
+      showFlash(error.message, "danger");
+    }
   }
 
   function handleClearSelection() {
     setSelectedEvent(null);
+    setTeams([]);
+    syncEventForms(null);
+  }
+
+  async function handleCreateEvent(event) {
+    event.preventDefault();
+    setIsSubmitting(true);
+
+    try {
+      await apiFetch("/api/events", {
+        method: "POST",
+        body: JSON.stringify({
+          ...eventForm,
+          max_participants: Number.parseInt(eventForm.max_participants, 10)
+        })
+      });
+
+      setEventForm({
+        name: "",
+        description: "",
+        type: "individual",
+        max_participants: ""
+      });
+      setShowCreateEventModal(false);
+      showFlash("Event created successfully.");
+      await loadDashboard();
+      setActiveView("events");
+    } catch (error) {
+      showFlash(error.message, "danger");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function handleRegister() {
+    if (!selectedEvent) {
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      await apiFetch(`/api/events/${selectedEvent.event_id}/register`, {
+        method: "POST",
+        body: JSON.stringify({})
+      });
+
+      showFlash("Registration completed successfully.");
+      await loadDashboard();
+    } catch (error) {
+      showFlash(error.message, "danger");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function handleSaveSchedule(event) {
+    event.preventDefault();
+
+    if (!selectedEvent) {
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      await apiFetch("/api/schedule", {
+        method: "POST",
+        body: JSON.stringify({
+          event_id: selectedEvent.event_id,
+          venue: scheduleForm.venue,
+          start_time: scheduleForm.start_time,
+          end_time: scheduleForm.end_time
+        })
+      });
+
+      setShowScheduleModal(false);
+      showFlash("Schedule saved successfully.");
+      await loadDashboard();
+      setActiveView("events");
+    } catch (error) {
+      showFlash(error.message, "danger");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function handleDeleteEvent() {
+    if (!selectedEvent) {
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete "${selectedEvent.name}"? This cannot be undone.`);
+
+    if (!confirmed) {
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      await apiFetch(`/api/events/${selectedEvent.event_id}`, {
+        method: "DELETE"
+      });
+
+      setSelectedEvent(null);
+      setTeams([]);
+      syncEventForms(null);
+      setShowScheduleModal(false);
+      showFlash("Event deleted successfully.");
+      await loadDashboard();
+      setActiveView("events");
+    } catch (error) {
+      showFlash(error.message, "danger");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function handleCreateTeam(event) {
+    event.preventDefault();
+
+    if (!selectedEvent) {
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      await apiFetch("/api/teams", {
+        method: "POST",
+        body: JSON.stringify({
+          team_name: teamForm.team_name,
+          event_id: selectedEvent.event_id
+        })
+      });
+
+      setTeamForm({ team_name: "" });
+      showFlash("Team created successfully.");
+      await loadDashboard();
+    } catch (error) {
+      showFlash(error.message, "danger");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function handleJoinTeam(teamId) {
+    setIsSubmitting(true);
+
+    try {
+      await apiFetch(`/api/teams/${teamId}/join`, {
+        method: "POST",
+        body: JSON.stringify({})
+      });
+
+      showFlash("Joined team successfully.");
+      await loadDashboard();
+    } catch (error) {
+      showFlash(error.message, "danger");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function handlePublishResult(event) {
+    event.preventDefault();
+
+    if (!selectedEvent) {
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      await apiFetch("/api/results", {
+        method: "POST",
+        body: JSON.stringify({
+          event_id: selectedEvent.event_id,
+          winner_details: resultForm.winner_details
+        })
+      });
+
+      showFlash("Result published successfully.");
+      await loadDashboard();
+      setActiveView("events");
+    } catch (error) {
+      showFlash(error.message, "danger");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   if (!user) {
@@ -754,28 +1415,58 @@ function App() {
         form={form}
         setForm={setForm}
         handleLogin={handleLogin}
-        message={message}
-        messageType={messageType}
-        isLoading={isLoading}
+        message={flash.message}
+        messageType={flash.type}
+        isLoading={isSubmitting || isLoading}
       />
     );
   }
 
   return (
-    <DashboardPage
-      user={user}
-      events={events}
-      schedule={schedule}
-      results={results}
-      activeView={activeView}
-      setActiveView={setActiveView}
-      onRefresh={loadDashboard}
-      onLogout={handleLogout}
-      selectedEvent={selectedEvent}
-      onSelectEvent={handleSelectEvent}
-      onClearSelection={handleClearSelection}
-      isLoading={isLoading}
-    />
+    <>
+      <FlashBanner flash={flash} onDismiss={clearFlash} />
+      <DashboardPage
+        user={user}
+        events={events}
+        schedule={schedule}
+        results={results}
+        teams={teams}
+        activeView={activeView}
+        setActiveView={setActiveView}
+        showCreateEventModal={showCreateEventModal}
+        showScheduleModal={showScheduleModal}
+        selectedEvent={selectedEvent}
+        eventForm={eventForm}
+        setEventForm={setEventForm}
+        scheduleForm={scheduleForm}
+        setScheduleForm={setScheduleForm}
+        resultForm={resultForm}
+        setResultForm={setResultForm}
+        teamForm={teamForm}
+        setTeamForm={setTeamForm}
+        isLoading={isLoading}
+        isSubmitting={isSubmitting}
+        onRefresh={loadDashboard}
+        onLogout={handleLogout}
+        onSelectEvent={handleSelectEvent}
+        onClearSelection={handleClearSelection}
+        onCreateEvent={handleCreateEvent}
+        onCloseCreateEvent={() => setShowCreateEventModal(false)}
+        onOpenCreateEvent={() => setShowCreateEventModal(true)}
+        onSaveSchedule={handleSaveSchedule}
+        onCloseSchedule={() => setShowScheduleModal(false)}
+        onOpenSchedule={() => {
+          if (selectedEvent) {
+            setShowScheduleModal(true);
+          }
+        }}
+        onDeleteEvent={handleDeleteEvent}
+        onPublishResult={handlePublishResult}
+        onRegister={handleRegister}
+        onCreateTeam={handleCreateTeam}
+        onJoinTeam={handleJoinTeam}
+      />
+    </>
   );
 }
 
