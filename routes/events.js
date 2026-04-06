@@ -1,6 +1,6 @@
 const express = require("express");
 const db = require("../db");
-const { isLoggedIn } = require("../middleware/auth");
+const { isLoggedIn, attachOptionalUser } = require("../middleware/auth");
 const { requireRole } = require("../middleware/rbac");
 const asyncHandler = require("../utils/asyncHandler");
 const { getEventById, getManageableEvent } = require("../utils/eventAccess");
@@ -9,7 +9,8 @@ const router = express.Router();
 
 router.get(
   "/",
-  asyncHandler(async (_req, res) => {
+  attachOptionalUser,
+  asyncHandler(async (req, res) => {
     const result = await db.query(
       `SELECT
          e.event_id,
@@ -22,6 +23,7 @@ router.get(
          u.name AS creator_name,
          COALESCE(pr.registration_count, 0) AS individual_registrations,
          COALESCE(t.team_count, 0) AS team_count,
+         COALESCE(v.volunteer_count, 0) AS volunteer_count,
          s.venue,
          s.start_time,
          s.end_time,
@@ -38,12 +40,78 @@ router.get(
          FROM Team
          GROUP BY event_id
        ) t ON t.event_id = e.event_id
+       LEFT JOIN (
+         SELECT event_id, COUNT(*)::INT AS volunteer_count
+         FROM VolunteerAssignment
+         GROUP BY event_id
+       ) v ON v.event_id = e.event_id
        LEFT JOIN Schedule s ON s.event_id = e.event_id
        LEFT JOIN Result r ON r.event_id = e.event_id
        ORDER BY s.start_time NULLS LAST, e.created_at DESC`
     );
 
-    res.json(result.rows);
+    const events = result.rows.map((eventItem) => ({
+      ...eventItem,
+      volunteers: []
+    }));
+
+    const user = req.user;
+
+    if (
+      !user ||
+      !["Admin", "Coordinator"].includes(user.role) ||
+      events.length === 0
+    ) {
+      return res.json(events);
+    }
+
+    const manageableEventIds =
+      user.role === "Coordinator"
+        ? events
+            .filter(
+              (eventItem) => Number(eventItem.created_by) === Number(user.user_id)
+            )
+            .map((eventItem) => eventItem.event_id)
+        : events.map((eventItem) => eventItem.event_id);
+
+    if (manageableEventIds.length === 0) {
+      return res.json(events);
+    }
+
+    const volunteerResult = await db.query(
+      `SELECT
+         va.assignment_id,
+         va.event_id,
+         va.task_description,
+         va.assigned_at,
+         volunteer.user_id AS volunteer_id,
+         volunteer.name AS volunteer_name,
+         volunteer.email AS volunteer_email,
+         assigner.name AS assigned_by_name
+       FROM VolunteerAssignment va
+       JOIN "User" volunteer ON volunteer.user_id = va.volunteer_id
+       JOIN "User" assigner ON assigner.user_id = va.assigned_by
+       WHERE va.event_id = ANY($1::INT[])
+       ORDER BY va.assigned_at DESC`,
+      [manageableEventIds]
+    );
+
+    const volunteersByEvent = new Map();
+
+    volunteerResult.rows.forEach((assignment) => {
+      if (!volunteersByEvent.has(assignment.event_id)) {
+        volunteersByEvent.set(assignment.event_id, []);
+      }
+
+      volunteersByEvent.get(assignment.event_id).push(assignment);
+    });
+
+    res.json(
+      events.map((eventItem) => ({
+        ...eventItem,
+        volunteers: volunteersByEvent.get(eventItem.event_id) || []
+      }))
+    );
   })
 );
 

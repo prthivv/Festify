@@ -10,11 +10,14 @@ const router = express.Router();
 router.post(
   "/assign",
   isLoggedIn,
-  requireRole("Admin", "Coordinator"),
+  requireRole("Admin", "Coordinator", "Volunteer"),
   asyncHandler(async (req, res) => {
     const { volunteer_id, event_id, task_description } = req.body;
-    const volunteerId = Number.parseInt(volunteer_id, 10);
     const eventId = Number.parseInt(event_id, 10);
+    const volunteerId =
+      req.user.role === "Volunteer"
+        ? req.user.user_id
+        : Number.parseInt(volunteer_id, 10);
 
     if (!Number.isInteger(volunteerId) || !Number.isInteger(eventId)) {
       return res.status(400).json({
@@ -28,12 +31,14 @@ router.post(
       return res.status(404).json({ error: "Event not found." });
     }
 
-    const manageableEvent = await getManageableEvent(eventId, req.user);
+    if (req.user.role !== "Volunteer") {
+      const manageableEvent = await getManageableEvent(eventId, req.user);
 
-    if (!manageableEvent) {
-      return res.status(403).json({
-        error: "You do not have permission to assign volunteers for this event."
-      });
+      if (!manageableEvent) {
+        return res.status(403).json({
+          error: "You do not have permission to assign volunteers for this event."
+        });
+      }
     }
 
     const volunteerResult = await db.query(
@@ -50,6 +55,39 @@ router.post(
       });
     }
 
+    const existingAssignmentResult = await db.query(
+      `SELECT assignment_id
+       FROM VolunteerAssignment
+       WHERE volunteer_id = $1 AND event_id = $2
+       LIMIT 1`,
+      [volunteerId, eventId]
+    );
+
+    if (existingAssignmentResult.rowCount > 0) {
+      return res.status(409).json({
+        error:
+          req.user.role === "Volunteer"
+            ? "You have already registered as a volunteer for this event."
+            : "This volunteer is already assigned to the selected event."
+      });
+    }
+
+    const volunteerCountResult = await db.query(
+      `SELECT COUNT(*)::INT AS volunteer_count
+       FROM VolunteerAssignment
+       WHERE event_id = $1`,
+      [eventId]
+    );
+
+    if (volunteerCountResult.rows[0].volunteer_count >= 5) {
+      return res.status(400).json({
+        error:
+          req.user.role === "Volunteer"
+            ? "You can't register as a volunteer for this event because it already has 5 volunteers."
+            : "This event already has 5 volunteers."
+      });
+    }
+
     const assignmentResult = await db.query(
       `INSERT INTO VolunteerAssignment (
          volunteer_id,
@@ -59,11 +97,21 @@ router.post(
        )
        VALUES ($1, $2, $3, $4)
        RETURNING *`,
-      [volunteerId, eventId, task_description || null, req.user.user_id]
+      [
+        volunteerId,
+        eventId,
+        req.user.role === "Volunteer"
+          ? "Self-selected volunteer"
+          : task_description || null,
+        req.user.user_id
+      ]
     );
 
     res.status(201).json({
-      message: "Volunteer assigned successfully.",
+      message:
+        req.user.role === "Volunteer"
+          ? "Volunteer registration completed successfully."
+          : "Volunteer assigned successfully.",
       assignment: assignmentResult.rows[0]
     });
   })

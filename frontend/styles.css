@@ -426,6 +426,46 @@ body {
   font-size: 0.86rem;
 }
 
+.selector-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.roster-list {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.roster-item {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.9rem 1rem;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.84);
+  border: 1px solid var(--border);
+}
+
+.roster-volunteer {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.roster-meta {
+  display: flex;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.reference-list {
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border);
+}
+
 .insight-grid {
   display: grid;
   grid-template-columns: 1fr;
@@ -648,6 +688,10 @@ body {
   }
 
   .form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .selector-row {
     grid-template-columns: 1fr;
   }
 }

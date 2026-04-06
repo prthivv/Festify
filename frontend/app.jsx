@@ -2,12 +2,32 @@ const { useEffect, useState } = React;
 
 const TOKEN_STORAGE_KEY = "festify_token";
 const AUTH_ROLES = ["Admin", "Coordinator", "Participant", "Volunteer"];
-const NAV_ITEMS = [
+const REG_ROLES = ["Participant", "Volunteer"];
+const BASE_NAV_ITEMS = [
   { id: "overview", label: "Overview" },
   { id: "events", label: "Events" },
   { id: "schedule", label: "Schedule" },
   { id: "results", label: "Results" }
 ];
+
+function getNavItems(user) {
+  const items = [...BASE_NAV_ITEMS];
+
+  if (user?.role === "Admin" || user?.role === "Coordinator") {
+    items.push({ id: "sponsors", label: "Sponsors" });
+    items.push({ id: "budget", label: "Budget" });
+  }
+
+  if (user?.role === "Volunteer") {
+    items.push({ id: "volunteer", label: "Volunteer" });
+  }
+
+  if (user?.role === "Admin" || user?.role === "Coordinator") {
+    items.push({ id: "volunteer-roster", label: "Volunteers" });
+  }
+
+  return items;
+}
 
 function getStoredToken() {
   try {
@@ -57,6 +77,57 @@ function formatDateTimeInput(value) {
   const date = new Date(value);
   const localOffsetMs = date.getTimezoneOffset() * 60 * 1000;
   return new Date(date.getTime() - localOffsetMs).toISOString().slice(0, 16);
+}
+
+function formatCurrency(value) {
+  const amount = Number.parseFloat(value);
+
+  if (Number.isNaN(amount)) {
+    return "0.00";
+  }
+
+  return amount.toLocaleString(undefined, {
+    style: "currency",
+    currency: "USD"
+  });
+}
+
+function getManageableEvents(user, events) {
+  if (!user) {
+    return [];
+  }
+
+  if (user.role === "Admin") {
+    return events;
+  }
+
+  if (user.role === "Coordinator") {
+    return events.filter(
+      (eventItem) => Number(eventItem.created_by) === Number(user.user_id)
+    );
+  }
+
+  return [];
+}
+
+function getKnownVolunteers(events) {
+  const volunteerMap = new Map();
+
+  events.forEach((eventItem) => {
+    (eventItem.volunteers || []).forEach((assignment) => {
+      if (!volunteerMap.has(assignment.volunteer_id)) {
+        volunteerMap.set(assignment.volunteer_id, {
+          volunteer_id: assignment.volunteer_id,
+          volunteer_name: assignment.volunteer_name,
+          volunteer_email: assignment.volunteer_email
+        });
+      }
+    });
+  });
+
+  return Array.from(volunteerMap.values()).sort((left, right) =>
+    left.volunteer_name.localeCompare(right.volunteer_name)
+  );
 }
 
 function readInputValue(id, fallback = "") {
@@ -118,7 +189,9 @@ async function apiFetch(url, options = {}) {
   }
 
   if (!response.ok) {
-    throw new Error(payload?.error || "Request failed.");
+    const requestError = new Error(payload?.error || "Request failed.");
+    requestError.status = response.status;
+    throw requestError;
   }
 
   return payload;
@@ -189,10 +262,12 @@ function Topbar({ user, onRefresh }) {
   );
 }
 
-function NavTabs({ activeView, setActiveView }) {
+function NavTabs({ user, activeView, setActiveView }) {
+  const navItems = getNavItems(user);
+
   return (
     <nav className="nav-strip fade-up" aria-label="Frontend sections">
-      {NAV_ITEMS.map((item) => (
+      {navItems.map((item) => (
         <button
           key={item.id}
           className={`nav-chip ${activeView === item.id ? "nav-chip-active" : ""}`}
@@ -431,6 +506,7 @@ function EventActionPanel({
   setTeamForm,
   isSubmitting,
   onOpenCreateEvent,
+  onOpenEditEvent,
   onOpenSchedule,
   onDeleteEvent,
   onPublishResult,
@@ -471,12 +547,16 @@ function EventActionPanel({
             <strong>{selectedEvent.name}</strong>.
           </p>
 
+          <button className="btn btn-brand" type="button" onClick={onOpenEditEvent}>
+            Edit Event
+          </button>
+
           <button className="btn btn-ghost" type="button" onClick={onOpenSchedule}>
             Schedule Event
           </button>
 
           <button
-            className="btn btn-outline-danger mt-3"
+            className="btn btn-outline-danger"
             type="button"
             disabled={isSubmitting}
             onClick={onDeleteEvent}
@@ -641,6 +721,7 @@ function EventsView({
   onSelectEvent,
   onClearSelection,
   onOpenCreateEvent,
+  onOpenEditEvent,
   onOpenSchedule,
   onDeleteEvent,
   onPublishResult,
@@ -698,6 +779,7 @@ function EventsView({
           setTeamForm={setTeamForm}
           isSubmitting={isSubmitting}
           onOpenCreateEvent={onOpenCreateEvent}
+          onOpenEditEvent={onOpenEditEvent}
           onOpenSchedule={onOpenSchedule}
           onDeleteEvent={onDeleteEvent}
           onPublishResult={onPublishResult}
@@ -754,6 +836,654 @@ function ResultsView({ results }) {
         ))}
       />
     </section>
+  );
+}
+
+function VolunteerView({
+  events,
+  assignments,
+  isSubmitting,
+  onChooseEvent
+}) {
+  const selectedEventIds = new Set(assignments.map((assignment) => assignment.event_id));
+
+  return (
+    <div className="content-grid">
+      <div className="content-main">
+        <section className="panel-card fade-up">
+          <SectionHeader
+            title="Volunteer Opportunities"
+            note="All events are visible here. Events with five volunteers are closed for self-selection."
+          />
+          <StackList
+            emptyMessage="No events are available right now."
+            items={events.map((eventItem) => {
+              const volunteerCount = Number(eventItem.volunteer_count || 0);
+              const alreadySelected = selectedEventIds.has(eventItem.event_id);
+              const isVolunteerFull = volunteerCount >= 5;
+
+              return (
+                <article className="stack-item" key={eventItem.event_id}>
+                  <div className="stack-topline">
+                    <strong>{eventItem.name}</strong>
+                    <span className="status-pill">{volunteerCount}/5 volunteers</span>
+                  </div>
+                  <p className="muted-note mb-2">
+                    {eventItem.description || "No description added yet."}
+                  </p>
+                  <div className="mini-meta">
+                    <span>{eventItem.type}</span>
+                    <span>{eventItem.venue || "Venue TBD"}</span>
+                    <span>{formatDate(eventItem.start_time)}</span>
+                    <span>{eventItem.creator_name}</span>
+                  </div>
+                  {isVolunteerFull && !alreadySelected ? (
+                    <p className="muted-note text-danger mt-3 mb-0">
+                      You can&apos;t register as a volunteer for this event because it already has 5
+                      volunteers.
+                    </p>
+                  ) : null}
+                  <button
+                    className="btn btn-brand mt-3"
+                    type="button"
+                    disabled={isSubmitting || alreadySelected || isVolunteerFull}
+                    onClick={() => onChooseEvent(eventItem.event_id)}
+                  >
+                    {alreadySelected
+                      ? "Already Chosen"
+                      : isVolunteerFull
+                        ? "Volunteer Full"
+                        : "Volunteer for This Event"}
+                  </button>
+                </article>
+              );
+            })}
+          />
+        </section>
+      </div>
+
+      <div className="content-side fade-up">
+        <section className="panel-card">
+          <SectionHeader
+            title="Your Selections"
+            note="Assignments already linked to your volunteer account."
+          />
+          <StackList
+            emptyMessage="You have not selected or been assigned to any events yet."
+            items={assignments.map((assignment) => (
+              <article className="stack-item" key={assignment.assignment_id}>
+                <div className="stack-topline">
+                  <strong>{assignment.event_name}</strong>
+                  <span className="status-pill">{assignment.venue || "Venue TBD"}</span>
+                </div>
+                <p className="muted-note mb-2">
+                  {assignment.task_description || "Task details will be shared later."}
+                </p>
+                <div className="mini-meta">
+                  <span>{formatDate(assignment.start_time)}</span>
+                  <span>{assignment.assigned_by_name}</span>
+                </div>
+              </article>
+            ))}
+          />
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function VolunteerRosterView({
+  user,
+  events,
+  volunteerAssignForm,
+  setVolunteerAssignForm,
+  isSubmitting,
+  onAssignVolunteer
+}) {
+  const roster =
+    user.role === "Coordinator"
+      ? events.filter(
+          (eventItem) => Number(eventItem.created_by) === Number(user.user_id)
+        )
+      : events;
+  const knownVolunteers = getKnownVolunteers(roster);
+  const totalAssignments = roster.reduce(
+    (sum, eventItem) => sum + Number(eventItem.volunteer_count || 0),
+    0
+  );
+  const fullyStaffedEvents = roster.filter(
+    (eventItem) => Number(eventItem.volunteer_count || 0) >= 5
+  ).length;
+
+  return (
+    <div className="content-grid">
+      <div className="content-main">
+        <section className="panel-card fade-up">
+          <SectionHeader
+            title="Volunteer Roster"
+            note={
+              user.role === "Admin"
+                ? "See volunteer coverage across all events."
+                : "See volunteer coverage for the events you manage."
+            }
+          />
+          <StackList
+            emptyMessage="No events are available for volunteer review yet."
+            items={roster.map((eventItem) => (
+              <article className="stack-item" key={eventItem.event_id}>
+                <div className="stack-topline">
+                  <strong>{eventItem.name}</strong>
+                  <span className="status-pill">
+                    {Number(eventItem.volunteer_count || 0)}/5 volunteers
+                  </span>
+                </div>
+                <p className="muted-note mb-2">
+                  {eventItem.description || "No description added yet."}
+                </p>
+                <div className="mini-meta">
+                  <span>{eventItem.type}</span>
+                  <span>{eventItem.venue || "Venue TBD"}</span>
+                  <span>{formatDate(eventItem.start_time)}</span>
+                  <span>{eventItem.creator_name}</span>
+                </div>
+                {(eventItem.volunteers || []).length > 0 ? (
+                  <div className="roster-list">
+                    {(eventItem.volunteers || []).map((assignment) => (
+                      <article className="roster-item" key={assignment.assignment_id}>
+                        <div className="roster-volunteer">
+                          <strong>{assignment.volunteer_name}</strong>
+                          <span className="muted-note">{assignment.volunteer_email}</span>
+                        </div>
+                        <div className="roster-meta">
+                          <span>{assignment.task_description || "Task pending"}</span>
+                          <span>{assignment.assigned_by_name}</span>
+                          <span>{formatDate(assignment.assigned_at)}</span>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="muted-note mt-3 mb-0">
+                    No volunteers are assigned to this event yet.
+                  </p>
+                )}
+              </article>
+            ))}
+          />
+        </section>
+      </div>
+
+      <div className="content-side fade-up">
+        <section className="panel-card">
+          <SectionHeader
+            title="Roster Snapshot"
+            note="At-a-glance volunteer coverage for the current scope."
+          />
+          <div className="insight-grid">
+            <SummaryCard label="Tracked Events" value={roster.length} />
+            <SummaryCard label="Assignments" value={totalAssignments} tone="accent" />
+            <SummaryCard label="Fully Staffed" value={fullyStaffedEvents} tone="warm" />
+          </div>
+        </section>
+
+        <section className="panel-card">
+          <SectionHeader
+            title="Assign Volunteer"
+            note="Use the existing assignment route by selecting an event and entering a volunteer user ID."
+          />
+          <form className="form-stack" onSubmit={onAssignVolunteer}>
+            <select
+              className="form-select"
+              value={volunteerAssignForm.event_id}
+              onChange={(event) =>
+                setVolunteerAssignForm((currentForm) => ({
+                  ...currentForm,
+                  event_id: event.target.value
+                }))
+              }
+              required
+            >
+              <option value="">Select event</option>
+              {roster.map((eventItem) => (
+                <option key={eventItem.event_id} value={eventItem.event_id}>
+                  {eventItem.name}
+                </option>
+              ))}
+            </select>
+            <input
+              className="form-control"
+              type="number"
+              min="1"
+              placeholder="Volunteer user ID"
+              value={volunteerAssignForm.volunteer_id}
+              onChange={(event) =>
+                setVolunteerAssignForm((currentForm) => ({
+                  ...currentForm,
+                  volunteer_id: event.target.value
+                }))
+              }
+              required
+            />
+            <textarea
+              className="form-control"
+              rows="3"
+              placeholder="Task description"
+              value={volunteerAssignForm.task_description}
+              onChange={(event) =>
+                setVolunteerAssignForm((currentForm) => ({
+                  ...currentForm,
+                  task_description: event.target.value
+                }))
+              }
+            />
+            <button className="btn btn-brand" type="submit" disabled={isSubmitting}>
+              Assign Volunteer
+            </button>
+          </form>
+          {knownVolunteers.length > 0 ? (
+            <div className="reference-list mt-3">
+              <div className="metric-label">Known Volunteer IDs</div>
+              <div className="mini-meta mt-2">
+                {knownVolunteers.map((volunteer) => (
+                  <span key={volunteer.volunteer_id}>
+                    #{volunteer.volunteer_id} {volunteer.volunteer_name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="muted-note mt-3 mb-0">
+              No volunteer IDs are visible yet. Enter a volunteer&apos;s user ID manually if needed.
+            </p>
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function SponsorsView({
+  user,
+  sponsors,
+  events,
+  sponsorForm,
+  setSponsorForm,
+  sponsorLinkForm,
+  setSponsorLinkForm,
+  isSubmitting,
+  onCreateSponsor,
+  onLinkSponsor
+}) {
+  const manageableEvents = getManageableEvents(user, events);
+  const totalSponsorValue = sponsors.reduce(
+    (sum, sponsor) => sum + Number.parseFloat(sponsor.contribution_amount || 0),
+    0
+  );
+
+  return (
+    <div className="content-grid">
+      <div className="content-main">
+        <section className="panel-card fade-up">
+          <SectionHeader
+            title="Sponsor Directory"
+            note="Track sponsor commitments and see which events they support."
+          />
+          <StackList
+            emptyMessage="No sponsors have been added yet."
+            items={sponsors.map((sponsor) => (
+              <article className="stack-item" key={sponsor.sponsor_id}>
+                <div className="stack-topline">
+                  <strong>{sponsor.name}</strong>
+                  <span className="status-pill">{formatCurrency(sponsor.contribution_amount)}</span>
+                </div>
+                <p className="muted-note mb-2">
+                  {sponsor.contact_info || "No contact information added yet."}
+                </p>
+                {(sponsor.linked_events || []).length > 0 ? (
+                  <div className="mini-meta">
+                    {(sponsor.linked_events || []).map((linkedEvent) => (
+                      <span key={`${sponsor.sponsor_id}-${linkedEvent.event_id}`}>
+                        {linkedEvent.event_name}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="muted-note mb-0">This sponsor is not linked to any events yet.</p>
+                )}
+              </article>
+            ))}
+          />
+        </section>
+      </div>
+
+      <div className="content-side fade-up action-column">
+        <section className="panel-card">
+          <SectionHeader
+            title="Sponsor Snapshot"
+            note="A quick look at the current sponsorship footprint."
+          />
+          <div className="insight-grid">
+            <SummaryCard label="Sponsors" value={sponsors.length} />
+            <SummaryCard label="Linked Events" value={sponsors.filter((sponsor) => sponsor.linked_events?.length).length} tone="accent" />
+            <SummaryCard label="Contribution" value={formatCurrency(totalSponsorValue)} tone="warm" />
+          </div>
+        </section>
+
+        {user.role === "Admin" ? (
+          <>
+            <section className="panel-card">
+              <SectionHeader
+                title="Create Sponsor"
+                note="Add a new sponsor record using the existing sponsor API."
+              />
+              <form className="form-stack" onSubmit={onCreateSponsor}>
+                <input
+                  className="form-control"
+                  type="text"
+                  placeholder="Sponsor name"
+                  value={sponsorForm.name}
+                  onChange={(event) =>
+                    setSponsorForm((currentForm) => ({
+                      ...currentForm,
+                      name: event.target.value
+                    }))
+                  }
+                  required
+                />
+                <input
+                  className="form-control"
+                  type="text"
+                  placeholder="Contact information"
+                  value={sponsorForm.contact_info}
+                  onChange={(event) =>
+                    setSponsorForm((currentForm) => ({
+                      ...currentForm,
+                      contact_info: event.target.value
+                    }))
+                  }
+                />
+                <input
+                  className="form-control"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="Contribution amount"
+                  value={sponsorForm.contribution_amount}
+                  onChange={(event) =>
+                    setSponsorForm((currentForm) => ({
+                      ...currentForm,
+                      contribution_amount: event.target.value
+                    }))
+                  }
+                />
+                <button className="btn btn-brand" type="submit" disabled={isSubmitting}>
+                  Create Sponsor
+                </button>
+              </form>
+            </section>
+
+            <section className="panel-card">
+              <SectionHeader
+                title="Link Sponsor"
+                note="Attach an existing sponsor to one of the events in the system."
+              />
+              <form className="form-stack" onSubmit={onLinkSponsor}>
+                <select
+                  className="form-select"
+                  value={sponsorLinkForm.sponsor_id}
+                  onChange={(event) =>
+                    setSponsorLinkForm((currentForm) => ({
+                      ...currentForm,
+                      sponsor_id: event.target.value
+                    }))
+                  }
+                  required
+                >
+                  <option value="">Select sponsor</option>
+                  {sponsors.map((sponsor) => (
+                    <option key={sponsor.sponsor_id} value={sponsor.sponsor_id}>
+                      {sponsor.name}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="form-select"
+                  value={sponsorLinkForm.event_id}
+                  onChange={(event) =>
+                    setSponsorLinkForm((currentForm) => ({
+                      ...currentForm,
+                      event_id: event.target.value
+                    }))
+                  }
+                  required
+                >
+                  <option value="">Select event</option>
+                  {manageableEvents.map((eventItem) => (
+                    <option key={eventItem.event_id} value={eventItem.event_id}>
+                      {eventItem.name}
+                    </option>
+                  ))}
+                </select>
+                <button className="btn btn-brand" type="submit" disabled={isSubmitting}>
+                  Link Sponsor
+                </button>
+              </form>
+            </section>
+          </>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function BudgetView({
+  user,
+  events,
+  budgetEventId,
+  setBudgetEventId,
+  budgetData,
+  budgetForm,
+  setBudgetForm,
+  expenseForm,
+  setExpenseForm,
+  isBudgetLoading,
+  isSubmitting,
+  onLoadBudget,
+  onSaveBudget,
+  onRecordExpense
+}) {
+  const manageableEvents = getManageableEvents(user, events);
+  const selectedBudgetEvent = manageableEvents.find(
+    (eventItem) => String(eventItem.event_id) === String(budgetEventId)
+  ) || null;
+  const budget = budgetData?.budget || null;
+  const expenses = budgetData?.expenses || [];
+  const spentAmount = budget
+    ? Number.parseFloat(budget.allocated_amount) - Number.parseFloat(budget.remaining_amount)
+    : 0;
+
+  return (
+    <div className="content-grid">
+      <div className="content-main">
+        <section className="panel-card fade-up">
+          <SectionHeader
+            title="Budget Control"
+            note="Review a specific event budget, then track every recorded expense."
+          />
+          <div className="selector-row">
+            <select
+              className="form-select"
+              value={budgetEventId}
+              onChange={(event) => setBudgetEventId(event.target.value)}
+            >
+              <option value="">Select event</option>
+              {manageableEvents.map((eventItem) => (
+                <option key={eventItem.event_id} value={eventItem.event_id}>
+                  {eventItem.name}
+                </option>
+              ))}
+            </select>
+            <button
+              className="btn btn-ghost"
+              type="button"
+              disabled={isBudgetLoading || !budgetEventId}
+              onClick={onLoadBudget}
+            >
+              {isBudgetLoading ? "Loading..." : "Load Budget"}
+            </button>
+          </div>
+
+          {!budgetEventId ? (
+            <p className="muted-note mb-0">Choose an event to view budget and expense details.</p>
+          ) : isBudgetLoading ? (
+            <p className="muted-note mb-0">Loading budget details...</p>
+          ) : selectedBudgetEvent ? (
+            <>
+              <div className="detail-grid mt-3">
+                <div className="detail-card">
+                  <div className="metric-label">Event</div>
+                  <div className="detail-value">{selectedBudgetEvent.name}</div>
+                </div>
+                <div className="detail-card">
+                  <div className="metric-label">Status</div>
+                  <div className="detail-value">{budget ? "Budget ready" : "No budget yet"}</div>
+                </div>
+                <div className="detail-card">
+                  <div className="metric-label">Allocated</div>
+                  <div className="detail-value">
+                    {budget ? formatCurrency(budget.allocated_amount) : "TBD"}
+                  </div>
+                </div>
+                <div className="detail-card">
+                  <div className="metric-label">Remaining</div>
+                  <div className="detail-value">
+                    {budget ? formatCurrency(budget.remaining_amount) : "TBD"}
+                  </div>
+                </div>
+              </div>
+
+              {budget ? (
+                <div className="result-banner mt-3">
+                  <strong>Spent so far:</strong>
+                  {" "}
+                  {formatCurrency(spentAmount)}
+                </div>
+              ) : (
+                <p className="muted-note mt-3 mb-0">
+                  No budget has been created for this event yet.
+                </p>
+              )}
+
+              <div className="mt-4">
+                <SectionHeader
+                  title="Expense Log"
+                  note="Each expense updates the remaining amount through the database trigger."
+                />
+                <DataTable
+                  headers={["Date", "Amount", "Description", "Recorded"]}
+                  emptyMessage="No expenses have been recorded for this event yet."
+                  rows={expenses.map((expense) => (
+                    <tr key={expense.expense_id}>
+                      <td>{formatCompactDate(expense.expense_date)}</td>
+                      <td>{formatCurrency(expense.amount)}</td>
+                      <td>{expense.description || "No description provided."}</td>
+                      <td>{formatDate(expense.recorded_at)}</td>
+                    </tr>
+                  ))}
+                />
+              </div>
+            </>
+          ) : null}
+        </section>
+      </div>
+
+      <div className="content-side fade-up action-column">
+        {user.role === "Admin" ? (
+          <section className="panel-card">
+            <SectionHeader
+              title="Save Budget"
+              note="Create or update the allocated amount for the selected event."
+            />
+            <form className="form-stack" onSubmit={onSaveBudget}>
+              <input
+                className="form-control"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="Allocated amount"
+                value={budgetForm.allocated_amount}
+                onChange={(event) =>
+                  setBudgetForm((currentForm) => ({
+                    ...currentForm,
+                    allocated_amount: event.target.value
+                  }))
+                }
+                required
+              />
+              <button className="btn btn-brand" type="submit" disabled={isSubmitting || !budgetEventId}>
+                Save Budget
+              </button>
+            </form>
+          </section>
+        ) : null}
+
+        <section className="panel-card">
+          <SectionHeader
+            title="Record Expense"
+            note="Admins and coordinators can log expenses against the selected event."
+          />
+          <form className="form-stack" onSubmit={onRecordExpense}>
+            <input
+              className="form-control"
+              type="number"
+              min="0.01"
+              step="0.01"
+              placeholder="Expense amount"
+              value={expenseForm.amount}
+              onChange={(event) =>
+                setExpenseForm((currentForm) => ({
+                  ...currentForm,
+                  amount: event.target.value
+                }))
+              }
+              required
+            />
+            <input
+              className="form-control"
+              type="date"
+              value={expenseForm.expense_date}
+              onChange={(event) =>
+                setExpenseForm((currentForm) => ({
+                  ...currentForm,
+                  expense_date: event.target.value
+                }))
+              }
+              required
+            />
+            <textarea
+              className="form-control"
+              rows="3"
+              placeholder="Expense description"
+              value={expenseForm.description}
+              onChange={(event) =>
+                setExpenseForm((currentForm) => ({
+                  ...currentForm,
+                  description: event.target.value
+                }))
+              }
+            />
+            <button className="btn btn-brand" type="submit" disabled={isSubmitting || !budgetEventId}>
+              Record Expense
+            </button>
+          </form>
+          {!budget ? (
+            <p className="muted-note mt-3 mb-0">
+              A budget must exist before expenses can be recorded successfully.
+            </p>
+          ) : null}
+        </section>
+      </div>
+    </div>
   );
 }
 
@@ -849,7 +1579,7 @@ function LoginPage({
                     id="password"
                     type="password"
                     value={loginForm.password}
-                    placeholder="correct horse battery staple"
+                    placeholder="Enter Password"
                     onChange={(event) =>
                       setLoginForm((currentForm) => ({
                         ...currentForm,
@@ -867,11 +1597,6 @@ function LoginPage({
                 >
                   {isSubmitting ? "Loading..." : "Sign In"}
                 </button>
-                <p className="muted-note mb-0">
-                  All seeded accounts share the demo password:
-                  {" "}
-                  <code>correct horse battery staple</code>
-                </p>
                 {message ? (
                   <div className={`small mt-2 text-${messageType || "muted"}`}>{message}</div>
                 ) : null}
@@ -932,7 +1657,7 @@ function LoginPage({
                     }
                     required
                   >
-                    {AUTH_ROLES.map((role) => (
+                    {REG_ROLES.map((role) => (
                       <option key={role} value={role}>
                         {role}
                       </option>
@@ -1004,21 +1729,40 @@ function DashboardPage({
   events,
   schedule,
   results,
+  sponsors,
   teams,
+  volunteerAssignments,
   activeView,
   setActiveView,
   showCreateEventModal,
+  showEditEventModal,
   showScheduleModal,
   selectedEvent,
   eventForm,
   setEventForm,
+  editEventForm,
+  setEditEventForm,
   scheduleForm,
   setScheduleForm,
   resultForm,
   setResultForm,
   teamForm,
   setTeamForm,
+  sponsorForm,
+  setSponsorForm,
+  sponsorLinkForm,
+  setSponsorLinkForm,
+  volunteerAssignForm,
+  setVolunteerAssignForm,
+  budgetEventId,
+  setBudgetEventId,
+  budgetData,
+  budgetForm,
+  setBudgetForm,
+  expenseForm,
+  setExpenseForm,
   isLoading,
+  isBudgetLoading,
   isSubmitting,
   onRefresh,
   onLogout,
@@ -1027,6 +1771,9 @@ function DashboardPage({
   onCreateEvent,
   onCloseCreateEvent,
   onOpenCreateEvent,
+  onCloseEditEvent,
+  onOpenEditEvent,
+  onUpdateEvent,
   onSaveSchedule,
   onCloseSchedule,
   onOpenSchedule,
@@ -1034,7 +1781,14 @@ function DashboardPage({
   onPublishResult,
   onRegister,
   onCreateTeam,
-  onJoinTeam
+  onJoinTeam,
+  onChooseVolunteerEvent,
+  onAssignVolunteer,
+  onCreateSponsor,
+  onLinkSponsor,
+  onLoadBudget,
+  onSaveBudget,
+  onRecordExpense
 }) {
   let activeContent;
 
@@ -1059,6 +1813,7 @@ function DashboardPage({
         onSelectEvent={onSelectEvent}
         onClearSelection={onClearSelection}
         onOpenCreateEvent={onOpenCreateEvent}
+        onOpenEditEvent={onOpenEditEvent}
         onOpenSchedule={onOpenSchedule}
         onDeleteEvent={onDeleteEvent}
         onPublishResult={onPublishResult}
@@ -1071,6 +1826,60 @@ function DashboardPage({
     activeContent = <ScheduleView schedule={schedule} />;
   } else if (activeView === "results") {
     activeContent = <ResultsView results={results} />;
+  } else if (activeView === "sponsors") {
+    activeContent = (
+      <SponsorsView
+        user={user}
+        sponsors={sponsors}
+        events={events}
+        sponsorForm={sponsorForm}
+        setSponsorForm={setSponsorForm}
+        sponsorLinkForm={sponsorLinkForm}
+        setSponsorLinkForm={setSponsorLinkForm}
+        isSubmitting={isSubmitting}
+        onCreateSponsor={onCreateSponsor}
+        onLinkSponsor={onLinkSponsor}
+      />
+    );
+  } else if (activeView === "budget") {
+    activeContent = (
+      <BudgetView
+        user={user}
+        events={events}
+        budgetEventId={budgetEventId}
+        setBudgetEventId={setBudgetEventId}
+        budgetData={budgetData}
+        budgetForm={budgetForm}
+        setBudgetForm={setBudgetForm}
+        expenseForm={expenseForm}
+        setExpenseForm={setExpenseForm}
+        isBudgetLoading={isBudgetLoading}
+        isSubmitting={isSubmitting}
+        onLoadBudget={onLoadBudget}
+        onSaveBudget={onSaveBudget}
+        onRecordExpense={onRecordExpense}
+      />
+    );
+  } else if (activeView === "volunteer") {
+    activeContent = (
+      <VolunteerView
+        events={events}
+        assignments={volunteerAssignments}
+        isSubmitting={isSubmitting}
+        onChooseEvent={onChooseVolunteerEvent}
+      />
+    );
+  } else if (activeView === "volunteer-roster") {
+    activeContent = (
+      <VolunteerRosterView
+        user={user}
+        events={events}
+        volunteerAssignForm={volunteerAssignForm}
+        setVolunteerAssignForm={setVolunteerAssignForm}
+        isSubmitting={isSubmitting}
+        onAssignVolunteer={onAssignVolunteer}
+      />
+    );
   } else {
     activeContent = (
       <OverviewView
@@ -1089,7 +1898,7 @@ function DashboardPage({
         <div className="dashboard-layout">
           <aside className="dashboard-sidebar fade-up">
             <SessionPanel user={user} onLogout={onLogout} />
-            <NavTabs activeView={activeView} setActiveView={setActiveView} />
+            <NavTabs user={user} activeView={activeView} setActiveView={setActiveView} />
           </aside>
           <section className="dashboard-main">{activeContent}</section>
         </div>
@@ -1162,6 +1971,73 @@ function DashboardPage({
         </Modal>
 
         <Modal
+          title={selectedEvent ? `Edit ${selectedEvent.name}` : "Edit Event"}
+          note="Update the selected event using the existing event API."
+          isOpen={showEditEventModal}
+          onClose={onCloseEditEvent}
+        >
+          <form className="form-stack" onSubmit={onUpdateEvent}>
+            <input
+              className="form-control"
+              type="text"
+              placeholder="Event name"
+              value={editEventForm.name}
+              onChange={(event) =>
+                setEditEventForm((currentForm) => ({
+                  ...currentForm,
+                  name: event.target.value
+                }))
+              }
+              required
+            />
+            <textarea
+              className="form-control"
+              rows="3"
+              placeholder="Short description"
+              value={editEventForm.description}
+              onChange={(event) =>
+                setEditEventForm((currentForm) => ({
+                  ...currentForm,
+                  description: event.target.value
+                }))
+              }
+            />
+            <div className="form-row">
+              <select
+                className="form-select"
+                value={editEventForm.type}
+                onChange={(event) =>
+                  setEditEventForm((currentForm) => ({
+                    ...currentForm,
+                    type: event.target.value
+                  }))
+                }
+              >
+                <option value="individual">Individual</option>
+                <option value="team">Team</option>
+              </select>
+              <input
+                className="form-control"
+                type="number"
+                min="1"
+                placeholder="Capacity"
+                value={editEventForm.max_participants}
+                onChange={(event) =>
+                  setEditEventForm((currentForm) => ({
+                    ...currentForm,
+                    max_participants: event.target.value
+                  }))
+                }
+                required
+              />
+            </div>
+            <button className="btn btn-brand" type="submit" disabled={isSubmitting}>
+              Save Changes
+            </button>
+          </form>
+        </Modal>
+
+        <Modal
           title={selectedEvent ? `Schedule ${selectedEvent.name}` : "Schedule Event"}
           note="Venue and time details for the currently selected event."
           isOpen={showScheduleModal}
@@ -1222,7 +2098,9 @@ function App() {
   const [events, setEvents] = useState([]);
   const [schedule, setSchedule] = useState([]);
   const [results, setResults] = useState([]);
+  const [sponsors, setSponsors] = useState([]);
   const [teams, setTeams] = useState([]);
+  const [volunteerAssignments, setVolunteerAssignments] = useState([]);
   const [activeView, setActiveView] = useState("overview");
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [authMode, setAuthMode] = useState("login");
@@ -1243,6 +2121,12 @@ function App() {
     type: "individual",
     max_participants: ""
   });
+  const [editEventForm, setEditEventForm] = useState({
+    name: "",
+    description: "",
+    type: "individual",
+    max_participants: ""
+  });
   const [scheduleForm, setScheduleForm] = useState({
     venue: "",
     start_time: "",
@@ -1254,13 +2138,39 @@ function App() {
   const [teamForm, setTeamForm] = useState({
     team_name: ""
   });
+  const [sponsorForm, setSponsorForm] = useState({
+    name: "",
+    contact_info: "",
+    contribution_amount: ""
+  });
+  const [sponsorLinkForm, setSponsorLinkForm] = useState({
+    sponsor_id: "",
+    event_id: ""
+  });
+  const [volunteerAssignForm, setVolunteerAssignForm] = useState({
+    event_id: "",
+    volunteer_id: "",
+    task_description: ""
+  });
+  const [budgetEventId, setBudgetEventId] = useState("");
+  const [budgetData, setBudgetData] = useState(null);
+  const [budgetForm, setBudgetForm] = useState({
+    allocated_amount: ""
+  });
+  const [expenseForm, setExpenseForm] = useState({
+    amount: "",
+    description: "",
+    expense_date: ""
+  });
   const [showCreateEventModal, setShowCreateEventModal] = useState(false);
+  const [showEditEventModal, setShowEditEventModal] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [flash, setFlash] = useState({
     message: "",
     type: "success"
   });
   const [isLoading, setIsLoading] = useState(true);
+  const [isBudgetLoading, setIsBudgetLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   function showFlash(message, type = "success") {
@@ -1279,6 +2189,15 @@ function App() {
     });
     setResultForm({
       winner_details: eventItem?.winner_details || ""
+    });
+  }
+
+  function syncEditEventForm(eventItem) {
+    setEditEventForm({
+      name: eventItem?.name || "",
+      description: eventItem?.description || "",
+      type: eventItem?.type || "individual",
+      max_participants: eventItem?.max_participants ? String(eventItem.max_participants) : ""
     });
   }
 
@@ -1308,7 +2227,51 @@ function App() {
         eventsPayload.find((eventItem) => eventItem.event_id === selectedEvent.event_id) || null;
       setSelectedEvent(refreshedSelection);
       syncEventForms(refreshedSelection);
+      syncEditEventForm(refreshedSelection);
       await loadTeamsForEvent(refreshedSelection);
+    }
+  }
+
+  async function loadVolunteerData() {
+    const assignmentsPayload = await apiFetch("/api/volunteers/me");
+    setVolunteerAssignments(assignmentsPayload);
+  }
+
+  async function loadSponsorData() {
+    const sponsorsPayload = await apiFetch("/api/sponsors");
+    setSponsors(sponsorsPayload);
+  }
+
+  async function loadBudgetDetails(eventId = budgetEventId) {
+    if (!eventId) {
+      setBudgetData(null);
+      return;
+    }
+
+    setIsBudgetLoading(true);
+
+    try {
+      const payload = await apiFetch(`/api/budgets/${eventId}`);
+      setBudgetData(payload);
+      setBudgetForm({
+        allocated_amount: payload.budget?.allocated_amount
+          ? String(payload.budget.allocated_amount)
+          : ""
+      });
+    } catch (error) {
+      if (error.status === 404) {
+        setBudgetData({
+          budget: null,
+          expenses: []
+        });
+        setBudgetForm({
+          allocated_amount: ""
+        });
+      } else {
+        throw error;
+      }
+    } finally {
+      setIsBudgetLoading(false);
     }
   }
 
@@ -1320,10 +2283,25 @@ function App() {
       const sessionPayload = token ? await apiFetch("/api/me") : { user: null };
       setUser(sessionPayload.user);
       await loadPublicDashboardData();
+
+      if (sessionPayload.user?.role) {
+        await loadSponsorData();
+      } else {
+        setSponsors([]);
+      }
+
+      if (sessionPayload.user?.role === "Volunteer") {
+        await loadVolunteerData();
+      } else {
+        setVolunteerAssignments([]);
+      }
     } catch (error) {
       if (error.message === "Invalid or expired token.") {
         setStoredToken(null);
         setUser(null);
+        setSponsors([]);
+        setVolunteerAssignments([]);
+        setBudgetData(null);
       } else {
         throw error;
       }
@@ -1337,6 +2315,20 @@ function App() {
       showFlash(error.message, "danger");
     });
   }, []);
+
+  useEffect(() => {
+    if (activeView !== "budget" || !budgetEventId || !user) {
+      return;
+    }
+
+    if (!["Admin", "Coordinator"].includes(user.role)) {
+      return;
+    }
+
+    loadBudgetDetails().catch((error) => {
+      showFlash(error.message, "danger");
+    });
+  }, [activeView, budgetEventId, user]);
 
   async function handleLogin() {
     const currentLoginForm = {
@@ -1368,6 +2360,12 @@ function App() {
       clearFlash();
       setIsLoading(true);
       await loadPublicDashboardData();
+      await loadSponsorData();
+      if (payload.user.role === "Volunteer") {
+        await loadVolunteerData();
+      } else {
+        setVolunteerAssignments([]);
+      }
     } catch (error) {
       showFlash(error.message, "danger");
     } finally {
@@ -1447,6 +2445,12 @@ function App() {
       showFlash("Registration successful. You are now signed in.");
       setIsLoading(true);
       await loadPublicDashboardData();
+      await loadSponsorData();
+      if (payload.user.role === "Volunteer") {
+        await loadVolunteerData();
+      } else {
+        setVolunteerAssignments([]);
+      }
     } catch (error) {
       showFlash(error.message, "danger");
     } finally {
@@ -1469,6 +2473,35 @@ function App() {
       setUser(null);
       setSelectedEvent(null);
       setTeams([]);
+      setSponsors([]);
+      setVolunteerAssignments([]);
+      setSponsorForm({
+        name: "",
+        contact_info: "",
+        contribution_amount: ""
+      });
+      setSponsorLinkForm({
+        sponsor_id: "",
+        event_id: ""
+      });
+      setVolunteerAssignForm({
+        event_id: "",
+        volunteer_id: "",
+        task_description: ""
+      });
+      setBudgetForm({
+        allocated_amount: ""
+      });
+      setExpenseForm({
+        amount: "",
+        description: "",
+        expense_date: ""
+      });
+      setBudgetEventId("");
+      setBudgetData(null);
+      setShowEditEventModal(false);
+      setShowCreateEventModal(false);
+      setShowScheduleModal(false);
       setActiveView("overview");
       clearFlash();
     }
@@ -1477,6 +2510,7 @@ function App() {
   async function handleSelectEvent(eventItem) {
     setSelectedEvent(eventItem);
     syncEventForms(eventItem);
+    syncEditEventForm(eventItem);
     setActiveView("events");
 
     try {
@@ -1490,6 +2524,7 @@ function App() {
     setSelectedEvent(null);
     setTeams([]);
     syncEventForms(null);
+    syncEditEventForm(null);
   }
 
   async function handleCreateEvent(event) {
@@ -1513,6 +2548,44 @@ function App() {
       });
       setShowCreateEventModal(false);
       showFlash("Event created successfully.");
+      await loadDashboard();
+      setActiveView("events");
+    } catch (error) {
+      showFlash(error.message, "danger");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  function handleOpenEditEvent() {
+    if (!selectedEvent) {
+      return;
+    }
+
+    syncEditEventForm(selectedEvent);
+    setShowEditEventModal(true);
+  }
+
+  async function handleUpdateEvent(event) {
+    event.preventDefault();
+
+    if (!selectedEvent) {
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      await apiFetch(`/api/events/${selectedEvent.event_id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          ...editEventForm,
+          max_participants: Number.parseInt(editEventForm.max_participants, 10)
+        })
+      });
+
+      setShowEditEventModal(false);
+      showFlash("Event updated successfully.");
       await loadDashboard();
       setActiveView("events");
     } catch (error) {
@@ -1596,6 +2669,8 @@ function App() {
       setSelectedEvent(null);
       setTeams([]);
       syncEventForms(null);
+      syncEditEventForm(null);
+      setShowEditEventModal(false);
       setShowScheduleModal(false);
       showFlash("Event deleted successfully.");
       await loadDashboard();
@@ -1681,6 +2756,164 @@ function App() {
     }
   }
 
+  async function handleChooseVolunteerEvent(eventId) {
+    setIsSubmitting(true);
+
+    try {
+      await apiFetch("/api/volunteers/assign", {
+        method: "POST",
+        body: JSON.stringify({
+          event_id: eventId
+        })
+      });
+
+      showFlash("Volunteer event selected successfully.");
+      await loadDashboard();
+      setActiveView("volunteer");
+    } catch (error) {
+      showFlash(error.message, "danger");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function handleAssignVolunteer(event) {
+    event.preventDefault();
+    setIsSubmitting(true);
+
+    try {
+      await apiFetch("/api/volunteers/assign", {
+        method: "POST",
+        body: JSON.stringify({
+          event_id: Number.parseInt(volunteerAssignForm.event_id, 10),
+          volunteer_id: Number.parseInt(volunteerAssignForm.volunteer_id, 10),
+          task_description: volunteerAssignForm.task_description
+        })
+      });
+
+      setVolunteerAssignForm({
+        event_id: "",
+        volunteer_id: "",
+        task_description: ""
+      });
+      showFlash("Volunteer assigned successfully.");
+      await loadDashboard();
+      setActiveView("volunteer-roster");
+    } catch (error) {
+      showFlash(error.message, "danger");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function handleCreateSponsor(event) {
+    event.preventDefault();
+    setIsSubmitting(true);
+
+    try {
+      await apiFetch("/api/sponsors", {
+        method: "POST",
+        body: JSON.stringify({
+          name: sponsorForm.name,
+          contact_info: sponsorForm.contact_info,
+          contribution_amount:
+            sponsorForm.contribution_amount === ""
+              ? 0
+              : Number.parseFloat(sponsorForm.contribution_amount)
+        })
+      });
+
+      setSponsorForm({
+        name: "",
+        contact_info: "",
+        contribution_amount: ""
+      });
+      showFlash("Sponsor created successfully.");
+      await loadDashboard();
+      setActiveView("sponsors");
+    } catch (error) {
+      showFlash(error.message, "danger");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function handleLinkSponsor(event) {
+    event.preventDefault();
+    setIsSubmitting(true);
+
+    try {
+      await apiFetch(`/api/sponsors/${sponsorLinkForm.sponsor_id}/link`, {
+        method: "POST",
+        body: JSON.stringify({
+          event_id: Number.parseInt(sponsorLinkForm.event_id, 10)
+        })
+      });
+
+      showFlash("Sponsor linked successfully.");
+      await loadDashboard();
+      setActiveView("sponsors");
+    } catch (error) {
+      showFlash(error.message, "danger");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function handleSaveBudget(event) {
+    event.preventDefault();
+    setIsSubmitting(true);
+
+    try {
+      await apiFetch(`/api/budgets/${budgetEventId}`, {
+        method: "POST",
+        body: JSON.stringify({
+          allocated_amount: Number.parseFloat(budgetForm.allocated_amount)
+        })
+      });
+
+      showFlash("Budget saved successfully.");
+      await loadBudgetDetails(budgetEventId);
+      await loadDashboard();
+      setActiveView("budget");
+    } catch (error) {
+      showFlash(error.message, "danger");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function handleRecordExpense(event) {
+    event.preventDefault();
+    setIsSubmitting(true);
+
+    try {
+      await apiFetch("/api/expenses", {
+        method: "POST",
+        body: JSON.stringify({
+          event_id: Number.parseInt(budgetEventId, 10),
+          amount: Number.parseFloat(expenseForm.amount),
+          description: expenseForm.description,
+          expense_date: expenseForm.expense_date
+        })
+      });
+
+      setExpenseForm({
+        amount: "",
+        description: "",
+        expense_date: ""
+      });
+      showFlash("Expense recorded successfully.");
+      await loadBudgetDetails(budgetEventId);
+      await loadDashboard();
+      setActiveView("budget");
+    } catch (error) {
+      showFlash(error.message, "danger");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   if (!user) {
     return (
       <LoginPage
@@ -1707,21 +2940,40 @@ function App() {
         events={events}
         schedule={schedule}
         results={results}
+        sponsors={sponsors}
         teams={teams}
+        volunteerAssignments={volunteerAssignments}
         activeView={activeView}
         setActiveView={setActiveView}
         showCreateEventModal={showCreateEventModal}
+        showEditEventModal={showEditEventModal}
         showScheduleModal={showScheduleModal}
         selectedEvent={selectedEvent}
         eventForm={eventForm}
         setEventForm={setEventForm}
+        editEventForm={editEventForm}
+        setEditEventForm={setEditEventForm}
         scheduleForm={scheduleForm}
         setScheduleForm={setScheduleForm}
         resultForm={resultForm}
         setResultForm={setResultForm}
         teamForm={teamForm}
         setTeamForm={setTeamForm}
+        sponsorForm={sponsorForm}
+        setSponsorForm={setSponsorForm}
+        sponsorLinkForm={sponsorLinkForm}
+        setSponsorLinkForm={setSponsorLinkForm}
+        volunteerAssignForm={volunteerAssignForm}
+        setVolunteerAssignForm={setVolunteerAssignForm}
+        budgetEventId={budgetEventId}
+        setBudgetEventId={setBudgetEventId}
+        budgetData={budgetData}
+        budgetForm={budgetForm}
+        setBudgetForm={setBudgetForm}
+        expenseForm={expenseForm}
+        setExpenseForm={setExpenseForm}
         isLoading={isLoading}
+        isBudgetLoading={isBudgetLoading}
         isSubmitting={isSubmitting}
         onRefresh={loadDashboard}
         onLogout={handleLogout}
@@ -1730,6 +2982,9 @@ function App() {
         onCreateEvent={handleCreateEvent}
         onCloseCreateEvent={() => setShowCreateEventModal(false)}
         onOpenCreateEvent={() => setShowCreateEventModal(true)}
+        onCloseEditEvent={() => setShowEditEventModal(false)}
+        onOpenEditEvent={handleOpenEditEvent}
+        onUpdateEvent={handleUpdateEvent}
         onSaveSchedule={handleSaveSchedule}
         onCloseSchedule={() => setShowScheduleModal(false)}
         onOpenSchedule={() => {
@@ -1742,6 +2997,13 @@ function App() {
         onRegister={handleRegister}
         onCreateTeam={handleCreateTeam}
         onJoinTeam={handleJoinTeam}
+        onChooseVolunteerEvent={handleChooseVolunteerEvent}
+        onAssignVolunteer={handleAssignVolunteer}
+        onCreateSponsor={handleCreateSponsor}
+        onLinkSponsor={handleLinkSponsor}
+        onLoadBudget={() => loadBudgetDetails(budgetEventId)}
+        onSaveBudget={handleSaveBudget}
+        onRecordExpense={handleRecordExpense}
       />
     </>
   );
