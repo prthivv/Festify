@@ -138,4 +138,4 @@ node scripts/rehash-seed-users.js
 - All database access uses parameterized PostgreSQL queries.
 - Coordinators are treated as managers of events they created, since the schema does not include a separate event-assignment table.
 - `Schedule.schedule_id` follows the provided schema and is managed manually in route code.
-- The frontend is served statically from `frontend/`, while Express is used only for API endpoints and session handling.
+- The frontend is served statically from `frontend/`, while Express is used only for API endpoints and JWT-protected route handling.
