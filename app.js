@@ -1,6 +1,5 @@
 const path = require("path");
 const express = require("express");
-const session = require("express-session");
 require("dotenv").config();
 
 const authRoutes = require("./routes/auth");
@@ -15,26 +14,10 @@ const resultsRoutes = require("./routes/results");
 
 const app = express();
 const port = Number.parseInt(process.env.PORT || "5000", 10);
-const sessionSecret =
-  process.env.SECRET_KEY ||
-  "replace-this-with-a-long-random-secret-before-deploying";
 const frontendDir = path.join(__dirname, "frontend");
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(
-  session({
-    secret: sessionSecret,
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: false,
-      maxAge: 1000 * 60 * 60 * 8
-    }
-  })
-);
 
 app.use(express.static(frontendDir));
 
@@ -42,7 +25,7 @@ app.get("/health", (_req, res) => {
   res.json({
     ok: true,
     service: "cefms",
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
   });
 });
 
@@ -72,7 +55,7 @@ app.use((err, _req, res, _next) => {
   }
 
   res.status(err.status || 500).json({
-    error: err.message || "Internal server error."
+    error: err.message || "Internal server error.",
   });
 });
 

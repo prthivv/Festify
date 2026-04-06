@@ -1,13 +1,13 @@
 # CEFMS / Festify
 
-College Event & Fest Management System (CEFMS) is a full-stack, database-driven web application for managing college festivals end-to-end. This scaffold uses an Express.js backend, PostgreSQL, a React frontend built with plain HTML/CSS/JS delivery, session-based authentication, and server-side role checks.
+College Event & Fest Management System (CEFMS) is a full-stack, database-driven web application for managing college festivals end-to-end. This scaffold uses an Express.js backend, PostgreSQL, a React frontend built with plain HTML/CSS/JS delivery, JWT-based authentication, and server-side role checks.
 
 ## Stack
 
 - Backend: Node.js + Express
 - Database: PostgreSQL 13+
 - Frontend: HTML, CSS, React
-- Auth: `express-session` + Argon2 password verification
+- Auth: JWT + Argon2 password verification
 - DB driver: `pg`
 
 ## Project Structure
@@ -58,11 +58,12 @@ DB_PORT=5432
 DB_NAME=cefms_db
 DB_USER=cefms_app
 DB_PASSWORD=your_password
-SECRET_KEY=replace_with_a_64_char_hex_secret
+JWT_SECRET=replace_with_a_64_char_hex_secret
+JWT_EXPIRES_IN=8h
 PORT=5000
 ```
 
-To generate a fresh session secret once Node is installed:
+To generate a fresh JWT secret once Node is installed:
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"

@@ -1,10 +1,15 @@
 const express = require("express");
 const argon2 = require("argon2");
+const jwt = require("jsonwebtoken");
 const db = require("../db");
 const { isLoggedIn } = require("../middleware/auth");
 const asyncHandler = require("../utils/asyncHandler");
 
 const router = express.Router();
+const jwtSecret =
+  process.env.JWT_SECRET ||
+  "replace-this-with-a-long-random-secret-before-deploying";
+const jwtExpiresIn = process.env.JWT_EXPIRES_IN || "8h";
 
 router.post(
   "/login",
@@ -13,7 +18,7 @@ router.post(
 
     if (!email || !password) {
       return res.status(400).json({
-        error: "Email and password are required."
+        error: "Email and password are required.",
       });
     }
 
@@ -22,14 +27,14 @@ router.post(
        FROM "User" u
        JOIN Role r ON r.role_id = u.role_id
        WHERE u.email = $1`,
-      [email.trim().toLowerCase()]
+      [email.trim().toLowerCase()],
     );
 
     const user = result.rows[0];
 
     if (!user) {
       return res.status(401).json({
-        error: "Invalid email or password."
+        error: "Invalid email or password.",
       });
     }
 
@@ -43,41 +48,38 @@ router.post(
 
     if (!passwordMatches) {
       return res.status(401).json({
-        error: "Invalid email or password."
+        error: "Invalid email or password.",
       });
     }
 
-    req.session.user = {
+    const userPayload = {
       user_id: user.user_id,
       name: user.name,
       email: user.email,
       role: user.role_name,
-      role_id: user.role_id
+      role_id: user.role_id,
     };
+    const token = jwt.sign(userPayload, jwtSecret, {
+      expiresIn: jwtExpiresIn,
+    });
 
     res.json({
       message: "Login successful.",
-      user: req.session.user
+      token,
+      user: userPayload,
     });
-  })
+  }),
 );
 
-router.post("/logout", isLoggedIn, (req, res, next) => {
-  req.session.destroy((err) => {
-    if (err) {
-      return next(err);
-    }
-
-    res.clearCookie("connect.sid");
-    res.json({
-      message: "Logged out successfully."
-    });
+router.post("/logout", isLoggedIn, (_req, res) => {
+  res.json({
+    message: "Logged out successfully.",
   });
 });
 
-router.get("/me", (req, res) => {
+router.get("/me", isLoggedIn, (req, res) => {
   res.json({
-    user: req.session.user || null
+    user: req.user,
   });
 });
 
