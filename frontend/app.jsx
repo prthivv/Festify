@@ -1,5 +1,28 @@
 const { useEffect, useState } = React;
 
+const TOKEN_STORAGE_KEY = "festify_token";
+
+function getStoredToken() {
+  try {
+    return localStorage.getItem(TOKEN_STORAGE_KEY);
+  } catch (error) {
+    return null;
+  }
+}
+
+function setStoredToken(token) {
+  try {
+    if (!token) {
+      localStorage.removeItem(TOKEN_STORAGE_KEY);
+      return;
+    }
+
+    localStorage.setItem(TOKEN_STORAGE_KEY, token);
+  } catch (error) {
+    // Ignore storage errors (private mode, blocked storage, etc.)
+  }
+}
+
 function formatDate(value) {
   if (!value) {
     return "TBD";
@@ -9,12 +32,22 @@ function formatDate(value) {
 }
 
 async function apiFetch(url, options = {}) {
+  const token = getStoredToken();
+  const baseHeaders = {
+    "Content-Type": "application/json",
+  };
+
+  if (token) {
+    baseHeaders.Authorization = `Bearer ${token}`;
+  }
+
   const response = await fetch(url, {
     headers: {
-      "Content-Type": "application/json"
+      ...baseHeaders,
+      ...(options.headers || {}),
     },
     credentials: "same-origin",
-    ...options
+    ...options,
   });
 
   let payload = null;
@@ -48,7 +81,10 @@ function DataTable({ headers, rows, emptyMessage }) {
             rows
           ) : (
             <tr>
-              <td colSpan={headers.length} className="text-center muted-note py-4">
+              <td
+                colSpan={headers.length}
+                className="text-center muted-note py-4"
+              >
                 {emptyMessage}
               </td>
             </tr>
@@ -66,18 +102,19 @@ function App() {
   const [results, setResults] = useState([]);
   const [form, setForm] = useState({
     email: "",
-    password: ""
+    password: "",
   });
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState("");
 
   async function loadDashboard() {
+    const token = getStoredToken();
     const [sessionPayload, eventsPayload, schedulePayload, resultsPayload] =
       await Promise.all([
-        apiFetch("/api/me"),
+        token ? apiFetch("/api/me") : Promise.resolve({ user: null }),
         apiFetch("/api/events"),
         apiFetch("/api/schedule"),
-        apiFetch("/api/results")
+        apiFetch("/api/results"),
       ]);
 
     setUser(sessionPayload.user);
@@ -99,15 +136,16 @@ function App() {
     try {
       const payload = await apiFetch("/api/login", {
         method: "POST",
-        body: JSON.stringify(form)
+        body: JSON.stringify(form),
       });
 
+      setStoredToken(payload.token);
       setUser(payload.user);
       setMessage("Login successful.");
       setMessageType("success");
       setForm({
         email: "",
-        password: ""
+        password: "",
       });
     } catch (error) {
       setMessage(error.message);
@@ -117,14 +155,20 @@ function App() {
 
   async function handleLogout() {
     try {
-      await apiFetch("/api/logout", {
-        method: "POST"
-      });
+      const token = getStoredToken();
 
+      if (token) {
+        await apiFetch("/api/logout", {
+          method: "POST",
+        });
+      }
+
+      setStoredToken(null);
       setUser(null);
       setMessage("You have been logged out.");
       setMessageType("success");
     } catch (error) {
+      setStoredToken(null);
       setMessage(error.message);
       setMessageType("danger");
     }
@@ -137,10 +181,13 @@ function App() {
           <span className="eyebrow">Festify / CEFMS</span>
           <div className="row align-items-end g-4 mt-1">
             <div className="col-lg-8">
-              <h1 className="display-title">Plan, run, and track college fests in one place.</h1>
+              <h1 className="display-title">
+                Plan, run, and track college fests in one place.
+              </h1>
               <p className="hero-copy">
-                This frontend is now a React app served by Express as static files, while the backend
-                stays focused on API routes, sessions, and PostgreSQL access.
+                This frontend is now a React app served by Express as static
+                files, while the backend stays focused on API routes, sessions,
+                and PostgreSQL access.
               </p>
             </div>
             <div className="col-lg-4">
@@ -180,7 +227,7 @@ function App() {
                     onChange={(event) =>
                       setForm((currentForm) => ({
                         ...currentForm,
-                        email: event.target.value
+                        email: event.target.value,
                       }))
                     }
                     required
@@ -199,7 +246,7 @@ function App() {
                     onChange={(event) =>
                       setForm((currentForm) => ({
                         ...currentForm,
-                        password: event.target.value
+                        password: event.target.value,
                       }))
                     }
                     required
@@ -209,12 +256,13 @@ function App() {
                   Sign In
                 </button>
                 <p className="muted-note mb-0">
-                  All seeded accounts share the demo password:
-                  {" "}
+                  All seeded accounts share the demo password:{" "}
                   <code>correct horse battery staple</code>
                 </p>
                 {message ? (
-                  <div className={`small mt-2 text-${messageType || "muted"}`}>{message}</div>
+                  <div className={`small mt-2 text-${messageType || "muted"}`}>
+                    {message}
+                  </div>
                 ) : null}
               </form>
             </section>
@@ -233,7 +281,11 @@ function App() {
                     <p className="mb-1 muted-note">{user.role}</p>
                     <p className="mb-0 muted-note">{user.email}</p>
                   </div>
-                  <button className="btn btn-ghost" type="button" onClick={handleLogout}>
+                  <button
+                    className="btn btn-ghost"
+                    type="button"
+                    onClick={handleLogout}
+                  >
                     Log Out
                   </button>
                 </div>
@@ -241,7 +293,8 @@ function App() {
                 <div>
                   <h2 className="section-title">No Active Session</h2>
                   <p className="muted-note mb-0">
-                    Sign in with one of the seeded users to test protected API routes.
+                    Sign in with one of the seeded users to test protected API
+                    routes.
                   </p>
                 </div>
               )}
