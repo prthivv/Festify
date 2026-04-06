@@ -1,6 +1,7 @@
 const { useEffect, useState } = React;
 
 const TOKEN_STORAGE_KEY = "festify_token";
+const AUTH_ROLES = ["Admin", "Coordinator", "Participant", "Volunteer"];
 const NAV_ITEMS = [
   { id: "overview", label: "Overview" },
   { id: "events", label: "Events" },
@@ -56,6 +57,16 @@ function formatDateTimeInput(value) {
   const date = new Date(value);
   const localOffsetMs = date.getTimezoneOffset() * 60 * 1000;
   return new Date(date.getTime() - localOffsetMs).toISOString().slice(0, 16);
+}
+
+function readInputValue(id, fallback = "") {
+  const element = document.getElementById(id);
+
+  if (!element || typeof element.value !== "string") {
+    return fallback;
+  }
+
+  return element.value;
 }
 
 function getEventStatus(eventItem) {
@@ -746,7 +757,19 @@ function ResultsView({ results }) {
   );
 }
 
-function LoginPage({ form, setForm, handleLogin, message, messageType, isLoading }) {
+function LoginPage({
+  authMode,
+  setAuthMode,
+  loginForm,
+  setLoginForm,
+  registerForm,
+  setRegisterForm,
+  handleLogin,
+  handleRegister,
+  message,
+  messageType,
+  isSubmitting
+}) {
   return (
     <main className="login-shell">
       <div className="app-container">
@@ -771,58 +794,204 @@ function LoginPage({ form, setForm, handleLogin, message, messageType, isLoading
           </section>
 
           <section className="login-card fade-up">
-            <SectionHeader title="Sign In" note="Use one of the seeded demo users to continue." />
-            <form className="d-grid gap-3" onSubmit={handleLogin}>
-              <div>
-                <label className="form-label" htmlFor="email">
-                  Email
-                </label>
-                <input
-                  className="form-control"
-                  id="email"
-                  type="email"
-                  value={form.email}
-                  placeholder="admin@cefms.edu"
-                  onChange={(event) =>
-                    setForm((currentForm) => ({
-                      ...currentForm,
-                      email: event.target.value
-                    }))
-                  }
-                  required
-                />
-              </div>
-              <div>
-                <label className="form-label" htmlFor="password">
-                  Password
-                </label>
-                <input
-                  className="form-control"
-                  id="password"
-                  type="password"
-                  value={form.password}
-                  placeholder="correct horse battery staple"
-                  onChange={(event) =>
-                    setForm((currentForm) => ({
-                      ...currentForm,
-                      password: event.target.value
-                    }))
-                  }
-                  required
-                />
-              </div>
-              <button className="btn btn-brand" type="submit" disabled={isLoading}>
-                {isLoading ? "Loading..." : "Sign In"}
+            <SectionHeader
+              title={authMode === "login" ? "Sign In" : "Create Account"}
+              note={
+                authMode === "login"
+                  ? "Use a seeded demo user or one you created locally."
+                  : "Register a new admin, coordinator, participant, or volunteer account."
+              }
+            />
+            <div className="auth-toggle">
+              <button
+                className={`auth-toggle-button ${authMode === "login" ? "auth-toggle-button-active" : ""}`}
+                type="button"
+                onClick={() => setAuthMode("login")}
+              >
+                Sign In
               </button>
-              <p className="muted-note mb-0">
-                All seeded accounts share the demo password:
-                {" "}
-                <code>correct horse battery staple</code>
-              </p>
-              {message ? (
-                <div className={`small mt-2 text-${messageType || "muted"}`}>{message}</div>
-              ) : null}
-            </form>
+              <button
+                className={`auth-toggle-button ${authMode === "register" ? "auth-toggle-button-active" : ""}`}
+                type="button"
+                onClick={() => setAuthMode("register")}
+              >
+                Register
+              </button>
+            </div>
+
+            {authMode === "login" ? (
+              <div className="d-grid gap-3" role="form" aria-label="Sign in form">
+                <div>
+                  <label className="form-label" htmlFor="email">
+                    Email
+                  </label>
+                  <input
+                    className="form-control"
+                    id="email"
+                    type="email"
+                    value={loginForm.email}
+                    placeholder="admin@cefms.edu"
+                    onChange={(event) =>
+                      setLoginForm((currentForm) => ({
+                        ...currentForm,
+                        email: event.target.value
+                      }))
+                    }
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="form-label" htmlFor="password">
+                    Password
+                  </label>
+                  <input
+                    className="form-control"
+                    id="password"
+                    type="password"
+                    value={loginForm.password}
+                    placeholder="correct horse battery staple"
+                    onChange={(event) =>
+                      setLoginForm((currentForm) => ({
+                        ...currentForm,
+                        password: event.target.value
+                      }))
+                    }
+                    required
+                  />
+                </div>
+                <button
+                  className="btn btn-brand"
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={() => handleLogin()}
+                >
+                  {isSubmitting ? "Loading..." : "Sign In"}
+                </button>
+                <p className="muted-note mb-0">
+                  All seeded accounts share the demo password:
+                  {" "}
+                  <code>correct horse battery staple</code>
+                </p>
+                {message ? (
+                  <div className={`small mt-2 text-${messageType || "muted"}`}>{message}</div>
+                ) : null}
+              </div>
+            ) : (
+              <div className="d-grid gap-3" role="form" aria-label="Register form">
+                <div>
+                  <label className="form-label" htmlFor="register-name">
+                    Full Name
+                  </label>
+                  <input
+                    className="form-control"
+                    id="register-name"
+                    type="text"
+                    value={registerForm.name}
+                    placeholder="Enter your name"
+                    onChange={(event) =>
+                      setRegisterForm((currentForm) => ({
+                        ...currentForm,
+                        name: event.target.value
+                      }))
+                    }
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="form-label" htmlFor="register-email">
+                    Email
+                  </label>
+                  <input
+                    className="form-control"
+                    id="register-email"
+                    type="email"
+                    value={registerForm.email}
+                    placeholder="you@example.com"
+                    onChange={(event) =>
+                      setRegisterForm((currentForm) => ({
+                        ...currentForm,
+                        email: event.target.value
+                      }))
+                    }
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="form-label" htmlFor="register-role">
+                    Role
+                  </label>
+                  <select
+                    className="form-select"
+                    id="register-role"
+                    value={registerForm.role}
+                    onChange={(event) =>
+                      setRegisterForm((currentForm) => ({
+                        ...currentForm,
+                        role: event.target.value
+                      }))
+                    }
+                    required
+                  >
+                    {AUTH_ROLES.map((role) => (
+                      <option key={role} value={role}>
+                        {role}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-row">
+                  <div>
+                    <label className="form-label" htmlFor="register-password">
+                      Password
+                    </label>
+                    <input
+                      className="form-control"
+                      id="register-password"
+                      type="password"
+                      value={registerForm.password}
+                      placeholder="Minimum 8 characters"
+                      onChange={(event) =>
+                        setRegisterForm((currentForm) => ({
+                          ...currentForm,
+                          password: event.target.value
+                        }))
+                      }
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="form-label" htmlFor="register-confirm-password">
+                      Confirm Password
+                    </label>
+                    <input
+                      className="form-control"
+                      id="register-confirm-password"
+                      type="password"
+                      value={registerForm.confirmPassword}
+                      placeholder="Re-enter password"
+                      onChange={(event) =>
+                        setRegisterForm((currentForm) => ({
+                          ...currentForm,
+                          confirmPassword: event.target.value
+                        }))
+                      }
+                      required
+                    />
+                  </div>
+                </div>
+                <button
+                  className="btn btn-brand"
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={() => handleRegister()}
+                >
+                  {isSubmitting ? "Loading..." : "Register"}
+                </button>
+                {message ? (
+                  <div className={`small mt-2 text-${messageType || "muted"}`}>{message}</div>
+                ) : null}
+              </div>
+            )}
           </section>
         </div>
       </div>
@@ -1056,9 +1225,17 @@ function App() {
   const [teams, setTeams] = useState([]);
   const [activeView, setActiveView] = useState("overview");
   const [selectedEvent, setSelectedEvent] = useState(null);
-  const [form, setForm] = useState({
+  const [authMode, setAuthMode] = useState("login");
+  const [loginForm, setLoginForm] = useState({
     email: "",
     password: ""
+  });
+  const [registerForm, setRegisterForm] = useState({
+    name: "",
+    email: "",
+    role: "Participant",
+    password: "",
+    confirmPassword: ""
   });
   const [eventForm, setEventForm] = useState({
     name: "",
@@ -1115,31 +1292,34 @@ function App() {
     setTeams(teamsPayload);
   }
 
+  async function loadPublicDashboardData() {
+    const [eventsPayload, schedulePayload, resultsPayload] = await Promise.all([
+      apiFetch("/api/events"),
+      apiFetch("/api/schedule"),
+      apiFetch("/api/results")
+    ]);
+
+    setEvents(eventsPayload);
+    setSchedule(schedulePayload);
+    setResults(resultsPayload);
+
+    if (selectedEvent) {
+      const refreshedSelection =
+        eventsPayload.find((eventItem) => eventItem.event_id === selectedEvent.event_id) || null;
+      setSelectedEvent(refreshedSelection);
+      syncEventForms(refreshedSelection);
+      await loadTeamsForEvent(refreshedSelection);
+    }
+  }
+
   async function loadDashboard() {
     setIsLoading(true);
 
     try {
       const token = getStoredToken();
-      const [sessionPayload, eventsPayload, schedulePayload, resultsPayload] =
-        await Promise.all([
-          token ? apiFetch("/api/me") : Promise.resolve({ user: null }),
-          apiFetch("/api/events"),
-          apiFetch("/api/schedule"),
-          apiFetch("/api/results")
-        ]);
-
+      const sessionPayload = token ? await apiFetch("/api/me") : { user: null };
       setUser(sessionPayload.user);
-      setEvents(eventsPayload);
-      setSchedule(schedulePayload);
-      setResults(resultsPayload);
-
-      if (selectedEvent) {
-        const refreshedSelection =
-          eventsPayload.find((eventItem) => eventItem.event_id === selectedEvent.event_id) || null;
-        setSelectedEvent(refreshedSelection);
-        syncEventForms(refreshedSelection);
-        await loadTeamsForEvent(refreshedSelection);
-      }
+      await loadPublicDashboardData();
     } catch (error) {
       if (error.message === "Invalid or expired token.") {
         setStoredToken(null);
@@ -1158,27 +1338,119 @@ function App() {
     });
   }, []);
 
-  async function handleLogin(event) {
-    event.preventDefault();
+  async function handleLogin() {
+    const currentLoginForm = {
+      email: readInputValue("email", loginForm.email).trim(),
+      password: readInputValue("password", loginForm.password)
+    };
+
+    setLoginForm(currentLoginForm);
+
+    if (!currentLoginForm.email || !currentLoginForm.password) {
+      showFlash("Email and password are required.", "danger");
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
       const payload = await apiFetch("/api/login", {
         method: "POST",
-        body: JSON.stringify(form)
+        body: JSON.stringify(currentLoginForm)
       });
 
       setStoredToken(payload.token);
       setUser(payload.user);
-      setForm({
+      setLoginForm({
         email: "",
         password: ""
       });
       clearFlash();
-      await loadDashboard();
+      setIsLoading(true);
+      await loadPublicDashboardData();
     } catch (error) {
       showFlash(error.message, "danger");
     } finally {
+      setIsLoading(false);
+      setIsSubmitting(false);
+    }
+  }
+
+  async function handleSignUp() {
+    const currentRegisterForm = {
+      name: readInputValue("register-name", registerForm.name).trim(),
+      email: readInputValue("register-email", registerForm.email).trim(),
+      role: readInputValue("register-role", registerForm.role),
+      password: readInputValue("register-password", registerForm.password),
+      confirmPassword: readInputValue("register-confirm-password", registerForm.confirmPassword)
+    };
+
+    setRegisterForm(currentRegisterForm);
+
+    if (!currentRegisterForm.name) {
+      showFlash("Full name is required.", "danger");
+      return;
+    }
+
+    if (!currentRegisterForm.email) {
+      showFlash("Email is required.", "danger");
+      return;
+    }
+
+    if (!currentRegisterForm.role) {
+      showFlash("Please select a role.", "danger");
+      return;
+    }
+
+    if (!currentRegisterForm.password) {
+      showFlash("Password is required.", "danger");
+      return;
+    }
+
+    if (currentRegisterForm.password.length < 8) {
+      showFlash("Password must be at least 8 characters long.", "danger");
+      return;
+    }
+
+    if (!currentRegisterForm.confirmPassword) {
+      showFlash("Please confirm your password.", "danger");
+      return;
+    }
+
+    if (currentRegisterForm.password !== currentRegisterForm.confirmPassword) {
+      showFlash("Passwords do not match.", "danger");
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const payload = await apiFetch("/api/register", {
+        method: "POST",
+        body: JSON.stringify({
+          name: currentRegisterForm.name,
+          email: currentRegisterForm.email,
+          role: currentRegisterForm.role,
+          password: currentRegisterForm.password
+        })
+      });
+
+      setStoredToken(payload.token);
+      setUser(payload.user);
+      setRegisterForm({
+        name: "",
+        email: "",
+        role: "Participant",
+        password: "",
+        confirmPassword: ""
+      });
+      showFlash("Registration successful. You are now signed in.");
+      setIsLoading(true);
+      await loadPublicDashboardData();
+    } catch (error) {
+      showFlash(error.message, "danger");
+    } finally {
+      setIsLoading(false);
       setIsSubmitting(false);
     }
   }
@@ -1412,12 +1684,17 @@ function App() {
   if (!user) {
     return (
       <LoginPage
-        form={form}
-        setForm={setForm}
+        authMode={authMode}
+        setAuthMode={setAuthMode}
+        loginForm={loginForm}
+        setLoginForm={setLoginForm}
+        registerForm={registerForm}
+        setRegisterForm={setRegisterForm}
         handleLogin={handleLogin}
+        handleRegister={handleSignUp}
         message={flash.message}
         messageType={flash.type}
-        isLoading={isSubmitting || isLoading}
+        isSubmitting={isSubmitting}
       />
     );
   }
