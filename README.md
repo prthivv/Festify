@@ -274,37 +274,6 @@ That means the app user exists but does not have table/sequence privileges yet. 
 - `GET /api/results`
 - `POST /api/results`
 
-## GitHub Push Checklist
-
-Before pushing, make sure:
-
-- `.env` is not committed
-- `node_modules/` is not committed
-- local cookie files are not committed
-- database dumps are not committed
-- only source code, SQL files, docs, and lockfiles are staged
-
-Check your git state:
-
-```bash
-git status
-```
-
-Stage and commit:
-
-```bash
-git add .
-git commit -m "Update local setup docs and frontend event workflows"
-```
-
-Push:
-
-```bash
-git branch -M main
-git remote add origin <your-github-repo-url>
-git push -u origin main
-```
-
 ## Notes
 
 - All SQL uses parameterized queries.
